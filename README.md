@@ -12,6 +12,7 @@ A read-only web app for exploring the data-lineage ontology stored in **Neo4j Au
 Every lineage page has an **Open in Query** button that loads the Cypher behind it into the editor.
 
 - **Bloom**: a search-driven, Bloom-style explorer for the lineage and policy graph (live mode only). See [Bloom explorer](#bloom-explorer) below.
+- **Chat**: ask questions in plain language about lineage, impact, PII, pipelines and what the policy documents say. See [Chatbot](#chatbot) below.
 
 ```
 backend/    FastAPI + neo4j driver (Python 3.11+)
@@ -41,6 +42,10 @@ Copy `.env.example` to `.env` in the repo root and fill it in. Settings are read
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of allowed browser origins. |
 | `MAX_ROWS` | `1000` | Hard row limit for user queries. A result frame shows a warning when it is reached. |
 | `QUERY_TIMEOUT_SECONDS` | `30` | Transaction timeout for user queries. |
+| `AZURE_OPEN_AI_KEY` | | Chatbot: Azure OpenAI key. Stays on the server. |
+| `AZURE_OPEN_AI_ENDPOINT` | | Chatbot: e.g. `https://<resource>.openai.azure.com` |
+| `AZURE_OPEN_AI_MODEL_NAME` | | Chatbot: the Azure **deployment** name. |
+| `AZURE_OPEN_AI_VERSION` | `2024-12-01-preview` | Chatbot: Azure OpenAI API version. |
 
 ## Run locally
 
@@ -146,6 +151,8 @@ The UI and API share an origin in the container, so `CORS_ORIGINS` only matters 
 | `GET /api/pii` | PII rows, KPIs, graph |
 | `GET /api/pipelines` | activity rows, graph |
 | `GET /api/concepts?include_tables=` | business ontology |
+| `GET /api/chat/status` | chatbot configured? model name, is policy search ready? |
+| `POST /api/chat` `{messages}` | the conversation so far → `{answer, graph, citations, steps, tokens, model}` |
 
 Lineage endpoints return `{nodes, edges, rows?, summary?, cypher}`. Here `cypher` is the query that was used, with the start id inlined, ready for "Open in Query". `id` accepts a full id (`fabric:Ontology_Lineage.fact.loan_portfolio.risk_bucket`) or a suffix (`fact.loan_portfolio.risk_bucket`, `banking.customers`).
 
@@ -229,6 +236,35 @@ Bloom API endpoints (under `/api/explore`):
 - `GET /values`
 - `GET|POST|PUT|DELETE /phrases`
 - `POST /phrases/{id}/run`
+
+## Chatbot
+
+The **Chat** page answers questions in plain language. The browser sends the whole conversation to `POST /api/chat`; the server keeps none.
+
+How it answers:
+- **Fixed tools, no generated Cypher.** Azure OpenAI is given eleven read-only tools (`backend/app/chat/tools.py`): policy search, policy section, policies for an asset, list policy documents, find assets, describe table, ontology terms (the business concepts, the tables representing them and the data flows between those tables), lineage, impact, PII columns and pipelines. Each is a reviewed query with bound parameters, run in a READ transaction, or a call into the same repository the lineage pages use.
+- **Trimmed results.** The model sees a few plain fields per row. Embeddings never leave the server, text is clipped, and a tool returns at most 60 rows.
+- **Graphs only when asked.** If the latest message directly asks for a graph, diagram or visual (words like *graph, diagram, visualise, draw, chart, picture*, or asking to *show / see / display* the lineage, impact, data flow, upstream, downstream or dependencies of something), a twelfth tool, `show_graph`, is offered. It fetches the graph from Neo4j with a fixed query (lineage, impact, policies linked to an asset, PII flow, pipelines, neighbours, or the ontology) and the Chat page draws it under the answer with the same graph component as the other pages, plus an **Open in Query** button that loads the Cypher behind it. Otherwise the tool does not exist for that turn, so a plain question never produces a graph; a follow-up is judged on its own wording. The model sees only the graph's size, and the browser gets at most 120 nodes with embeddings and long text removed. Plain scrolling over a graph scrolls the chat; hold Ctrl (or pinch) to zoom.
+- **Policy search is semantic.** The question is embedded locally and matched against the `policy_chunk_embedding` vector index. Answers cite the policy sections they relied on, and the UI lists the sections consulted. Open **How this was found** under an answer to see every tool call.
+- **Linked columns are a hint, not the truth.** `GOVERNS` links come from the earlier automated mapping and may be incomplete, and the assistant is told to say so. Nothing in the graph is changed by the chatbot.
+
+Setup:
+1. Put the four `AZURE_OPEN_AI_*` values in `.env` (see the table above; `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` and `AZURE_OPENAI_API_KEY` spellings also work), then restart the backend.
+2. Download the local embedding model once:
+
+   ```bash
+   backend\.venv\Scripts\python scripts\fetch_embedding_model.py
+   ```
+
+   It goes to `.model_cache/` (git-ignored). The script trusts the operating system's certificate store, so it works behind a proxy that re-signs TLS certificates without turning verification off. It must run as its own process: the API server never loads that trust store, because it does not coexist with `NEO4J_URI=neo4j+ssc://`. The model has to be `BAAI/bge-small-en-v1.5` (`EMBEDDING_MODEL`), because that is what produced the vectors stored in Neo4j.
+
+`GET /api/chat/status` (and a notice at the top of the Chat page) tells you what is missing. Lineage, impact, PII and pipeline questions work without the embedding model; policy questions need it **and** live mode (snapshot data has no policy text).
+
+Limits to know about:
+- The local model is the ONNX build of bge-small run through `fastembed`, while the vectors in Neo4j were made with `sentence-transformers`. They are close but not guaranteed identical, so check the scores on a few real questions.
+- Answers are generated by a language model: read the cited sections before acting on one. Azure's content filter can block a prompt; the page then asks the user to rephrase.
+- `/api/chat` has no authentication, like the other routes, and every question costs model tokens. Add real auth in `require_user` before exposing it beyond a trusted network.
+- Tool-call rounds are capped (`chat_max_tool_rounds`, default 6); after that the model must answer from what it has.
 
 ## Troubleshooting
 

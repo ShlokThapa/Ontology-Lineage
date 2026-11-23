@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import type { Health, SchemaInfo } from "../api/types";
 
-export type Page = "query" | "bloom" | "lineage" | "impact" | "pii" | "pipelines" | "schema";
-export const PAGES: Page[] = ["query", "bloom", "lineage", "impact", "pii", "pipelines", "schema"];
+export type Page = "chat" | "query" | "bloom" | "lineage" | "impact" | "pii" | "pipelines" | "schema";
+export const PAGES: Page[] = ["chat", "query", "bloom", "lineage", "impact", "pii", "pipelines", "schema"];
 
 interface PendingQuery {
   text: string;

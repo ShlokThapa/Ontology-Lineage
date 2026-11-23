@@ -183,6 +183,52 @@ export interface PipelineSummary {
 
 // ---- status / schema ----------------------------------------------------------
 
+/** One turn of the conversation sent to the chatbot. */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatCitation {
+  chunk_id: string;
+  doc_id: string | null;
+  doc_title: string | null;
+  section_path: string | null;
+  heading: string | null;
+}
+
+/** A tool the chatbot ran to find its answer. */
+export interface ChatStep {
+  tool: string;
+  arguments: Record<string, unknown>;
+  summary: string;
+  error: boolean;
+}
+
+/** A graph fetched from Neo4j for the chat to draw. Present only when the user asked for one. */
+export interface ChatGraph extends GraphData {
+  kind: "lineage" | "impact" | "policies" | "pii" | "pipelines" | "neighbors" | "ontology";
+  title: string;
+  cypher: string | null;
+  truncated: boolean;
+}
+
+export interface ChatResponse {
+  answer: string;
+  graph: ChatGraph | null;
+  citations: ChatCitation[];
+  steps: ChatStep[];
+  tokens: number;
+  model: string;
+}
+
+export interface ChatStatus {
+  configured: boolean;
+  model: string | null;
+  policy_search: boolean;
+  mode: "live" | "snapshot";
+}
+
 export interface Health {
   mode: "live" | "snapshot";
   connected: boolean;

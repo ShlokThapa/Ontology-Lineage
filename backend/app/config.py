@@ -35,6 +35,30 @@ class Settings(BaseSettings):
     max_rows: int = Field(default=1000, ge=1, le=100_000)
     query_timeout_seconds: float = Field(default=30, gt=0, le=600)
 
+    # --- Chatbot (Azure OpenAI) ------------------------------------------------
+    # Names follow the .env this project already uses; the usual AZURE_OPENAI_* spellings also work.
+    azure_openai_key: str = Field(
+        default="", validation_alias=AliasChoices("AZURE_OPEN_AI_KEY", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_KEY")
+    )
+    azure_openai_endpoint: str = Field(
+        default="", validation_alias=AliasChoices("AZURE_OPEN_AI_ENDPOINT", "AZURE_OPENAI_ENDPOINT")
+    )
+    # The Azure *deployment* name (what the API calls `model`).
+    azure_openai_model: str = Field(
+        default="",
+        validation_alias=AliasChoices("AZURE_OPEN_AI_MODEL_NAME", "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_MODEL"),
+    )
+    azure_openai_version: str = Field(
+        default="2024-12-01-preview",
+        validation_alias=AliasChoices("AZURE_OPEN_AI_VERSION", "AZURE_OPENAI_API_VERSION"),
+    )
+    chat_max_tool_rounds: int = Field(default=6, ge=1, le=12)
+    chat_timeout_seconds: float = Field(default=90, gt=0, le=600)
+
+    # Questions are embedded locally with the SAME model that embedded the policy chunks in Neo4j.
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    model_cache_dir: Path = REPO_DIR / ".model_cache"
+
     snapshot_dir: Path = REPO_DIR / "data"
     # Saved search phrases for the Bloom page
     phrases_file: Path = REPO_DIR / "data" / "search_phrases.json"

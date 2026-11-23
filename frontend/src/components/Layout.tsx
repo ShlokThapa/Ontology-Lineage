@@ -4,6 +4,7 @@ import {
   GitFork,
   Info,
   Keyboard,
+  MessageSquare,
   Network,
   RefreshCw,
   ShieldAlert,
@@ -21,6 +22,7 @@ import { type Page, useApp } from "../store/app";
 import { toast, useToasts } from "../store/toasts";
 
 const NAV: { page: Page; label: string; icon: React.ReactNode }[] = [
+  { page: "chat", label: "Chat", icon: <MessageSquare size={20} /> },
   { page: "query", label: "Query", icon: <SquareTerminal size={20} /> },
   { page: "bloom", label: EXPLORER_MENU_LABEL, icon: <Flower2 size={20} /> },
   { page: "lineage", label: "Lineage Explorer", icon: <GitFork size={20} /> },

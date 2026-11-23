@@ -17,10 +17,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import cypher, lineage
 from .config import Settings, get_settings
+from .cypher import cypher_literal, inline_params  # noqa: F401 - re-exported: tests import them from here
 from .graphmodel import GNode, SubGraph, node_view, to_neo4j_format, to_view
 from .guard import ReadOnlyViolation, ensure_read_only
 from .neo4j_client import DatabaseUnavailable, Neo4jClient
 from .repository import LiveRepository, Repository
+from .chat.embeddings import LocalEmbedder, QueryEmbedder
+from .chat.llm import AzureChatLLM, ChatLLM, LLMError, LLMNotConfigured
+from .chat.router import create_chat_router
 from .explore.phrases import PhraseStore
 from .explore.router import create_explore_router
 from .snapshot import SnapshotRepository
@@ -55,6 +59,15 @@ def _install_error_handlers(app: FastAPI) -> None:
     async def _unavailable(_: Request, exc: DatabaseUnavailable) -> JSONResponse:
         log.warning("Database unavailable: %s", exc)
         return _error(503, "LineageStudio.DatabaseUnavailable", "The Neo4j database is not reachable. Try Reconnect.")
+
+    @app.exception_handler(LLMNotConfigured)
+    async def _llm_not_configured(_: Request, exc: LLMNotConfigured) -> JSONResponse:
+        return _error(503, "LineageStudio.ChatNotConfigured", f"The chatbot is not configured. {exc}")
+
+    @app.exception_handler(LLMError)
+    async def _llm_error(_: Request, exc: LLMError) -> JSONResponse:
+        log.warning("Language model call failed: %s", exc)
+        return _error(502, "LineageStudio.LlmError", str(exc))
 
     @app.exception_handler(Neo4jError)
     async def _neo4j(_: Request, exc: Neo4jError) -> JSONResponse:
@@ -133,17 +146,6 @@ LevelParam = Literal["column", "table"]
 # ---------------------------------------------------------------------------
 
 
-def cypher_literal(value: str) -> str:
-    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
-
-
-def inline_params(query: str, params: dict[str, Any]) -> str:
-    """Inline string parameters so "Open in Query" works without :param."""
-    for key, value in params.items():
-        query = query.replace(f"${key}", cypher_literal(str(value)))
-    return query
-
-
 def add_policies(repo: "Repository", sub: SubGraph, view_sub: SubGraph, start: GNode, level: str) -> int:
     """Overlay the policy documents governing the assets of a lineage view.
 
@@ -192,12 +194,16 @@ def create_app(
     repo: Repository | None = None,
     client: Neo4jClient | None = None,
     phrase_store: PhraseStore | None = None,
+    llm: ChatLLM | None = None,
+    embedder: QueryEmbedder | None = None,
 ) -> FastAPI:
-    """Build the app. `repo` / `client` can be injected (tests)."""
+    """Build the app. `repo` / `client` / `llm` / `embedder` can be injected (tests)."""
     settings = settings or get_settings()
     if client is not None and repo is None:
         repo = LiveRepository(client)
-    state: dict[str, Any] = {"repo": repo, "client": client}
+    state: dict[str, Any] = {"repo": repo, "client": client, "llm": llm}
+    if embedder is None:
+        embedder = LocalEmbedder(settings.embedding_model, settings.model_cache_dir)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):  # type: ignore[no-untyped-def]
@@ -248,6 +254,14 @@ def create_app(
         if node is None:
             raise ApiError(404, "LineageStudio.NotFound", f"No asset found for '{ref}'.")
         return node
+
+    def chat_llm() -> ChatLLM:
+        if state["llm"] is None:  # built on first use so a missing key never blocks startup
+            state["llm"] = AzureChatLLM(settings)
+        return state["llm"]
+
+    def graph_client() -> Neo4jClient | None:
+        return None if settings.mode == "snapshot" else state["client"]
 
     api = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
@@ -409,6 +423,16 @@ def create_app(
         return {**to_view(sub), "summary": {"concepts": sum(1 for n in sub.nodes.values() if n.label == "BusinessConcept")}, "cypher": q}
 
     app.include_router(api)
+    app.include_router(
+        create_chat_router(
+            settings=settings,
+            get_repo=get_repo,
+            get_client=graph_client,
+            get_llm=chat_llm,
+            embedder=embedder,
+            require_user=require_user,
+        )
+    )
     # Bloom explorer (live mode only: live_client() returns 503 in snapshot mode)
     app.include_router(
         create_explore_router(

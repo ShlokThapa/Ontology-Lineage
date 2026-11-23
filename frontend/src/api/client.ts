@@ -2,6 +2,9 @@ import type {
   Direction,
   GraphData,
   Health,
+  ChatResponse,
+  ChatStatus,
+  ChatTurn,
   ImpactRow,
   ImpactSummary,
   Level,
@@ -96,6 +99,11 @@ export const api = {
   pii: () => request<PageResponse<PiiRow, PiiSummary>>("/api/pii"),
 
   pipelines: () => request<PageResponse<PipelineRow, PipelineSummary>>("/api/pipelines"),
+
+  chatStatus: () => request<ChatStatus>("/api/chat/status"),
+
+  chat: (messages: ChatTurn[], signal?: AbortSignal) =>
+    request<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify({ messages }), signal }),
 
   concepts: (includeTables: boolean) =>
     request<PageResponse>("/api/concepts", { query: { include_tables: includeTables } }),

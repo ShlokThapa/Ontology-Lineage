@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { ShortcutsHelp, Sidebar, Toasts, TopBar } from "./components/Layout";
 import { BloomPage } from "./pages/BloomPage";
+import { ChatPage } from "./pages/ChatPage";
 import { ImpactAnalysis } from "./pages/ImpactAnalysis";
 import { LineageExplorer } from "./pages/LineageExplorer";
 import { PiiTracker } from "./pages/PiiTracker";
@@ -24,7 +25,7 @@ export default function App() {
   }, [syncFromHash]);
 
   // Lineage pages re-mount when their parameters change so local state (direction, depth) follows the URL.
-  const key = page === "query" || page === "bloom" ? page : `${page}:${JSON.stringify(pageParams)}`;
+  const key = page === "query" || page === "bloom" || page === "chat" ? page : `${page}:${JSON.stringify(pageParams)}`;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-ink-950 text-ink-100">
@@ -40,7 +41,11 @@ export default function App() {
           <div className={page === "bloom" ? "h-full" : "hidden"}>
             <BloomPage />
           </div>
-          {page !== "query" && page !== "bloom" && (
+          {/* Chat stays mounted too, so the conversation survives switching pages. */}
+          <div className={page === "chat" ? "h-full" : "hidden"}>
+            <ChatPage />
+          </div>
+          {page !== "query" && page !== "bloom" && page !== "chat" && (
             <div key={key} className="h-full">
               {page === "lineage" && <LineageExplorer />}
               {page === "impact" && <ImpactAnalysis />}

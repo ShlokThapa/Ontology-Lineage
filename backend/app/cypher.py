@@ -8,9 +8,20 @@ bounds cannot be parameters.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 Direction = Literal["upstream", "downstream", "both"]
+
+
+def cypher_literal(value: str) -> str:
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def inline_params(query: str, params: dict[str, Any]) -> str:
+    """Inline string parameters so "Open in Query" works without :param."""
+    for key, value in params.items():
+        query = query.replace(f"${key}", cypher_literal(str(value)))
+    return query
 
 COLUMN_SEARCH_LABELS = ("Table", "View", "Column", "Pipeline", "BusinessConcept")
 
