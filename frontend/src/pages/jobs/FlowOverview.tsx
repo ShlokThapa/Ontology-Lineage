@@ -34,29 +34,32 @@ export function FlowOverview({
           How the data flows
         </h2>
         <p className="text-[11px] text-ink-400">
-          Work from left to right. Click a box to jump to its buttons. <Sparkles size={11} className="mx-0.5 inline" style={{ color: TONE.orange }} /> marks the stage that uses AI.
+          Work from left to right. Click a box to jump to its buttons (graph modelling has none).<Sparkles size={11} className="mx-0.5 inline" style={{ color: TONE.orange }} /> marks the stage that uses AI.
         </p>
       </div>
-      <ol className="flex flex-wrap items-stretch gap-y-2 lg:flex-nowrap">
+      <ol className="flex flex-wrap items-stretch gap-y-2 xl:flex-nowrap">
         {STAGES.map((s, i) => {
           const Icon = s.icon;
           const title = s.group === "use" || s.group === "llm" ? s.short : (config.groups[s.group] ?? s.short);
           const selected = active === s.group;
           const live = running(s.group);
+          // A display-only stage is a plain box: nothing to click and nothing behind it.
+          const Box = s.display_only ? "div" : "button";
           return (
-            <li key={s.group} className="flex min-w-[200px] flex-1 items-stretch">
+            <li key={s.group} className="flex min-w-[180px] flex-1 items-stretch">
               {i > 0 && (
-                <span className="hidden shrink-0 items-center px-0.5 lg:flex" aria-hidden>
+                <span className="hidden shrink-0 items-center px-0.5 xl:flex" aria-hidden>
                   <ChevronRight size={26} strokeWidth={3} className="text-[#9AA3B5]" />
                 </span>
               )}
-              <button
-                type="button"
-                onClick={() => onSelect(s.group)}
+              <Box
+                {...(s.display_only ? {} : { type: "button" as const, onClick: () => onSelect(s.group) })}
                 aria-current={selected ? "step" : undefined}
-                className={`flex w-full flex-col rounded-2xl bg-[#EEF1F6] p-3.5 text-left transition hover:bg-[#E4E9F2] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                  selected ? "ring-2 ring-accent" : ""
-                }`}
+                className={`flex w-full flex-col rounded-2xl bg-[#EEF1F6] p-3.5 text-left ${
+                  s.display_only
+                    ? ""
+                    : "transition hover:bg-[#E4E9F2] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                } ${selected ? "ring-2 ring-accent" : ""}`}
               >
                 <div className="flex items-start justify-between">
                   <span className="flex h-10 w-10 items-center justify-center rounded-full text-white" style={{ background: s.circle }}>
@@ -70,9 +73,11 @@ export function FlowOverview({
                 <div className="mt-2.5 font-display text-[15px] font-bold leading-tight" style={{ color: NAVY }}>
                   {title}
                 </div>
-                <div className="mt-0.5 text-[11px] font-semibold" style={{ color: TONE[s.whereTone] }}>
-                  {s.where}
-                </div>
+                {s.where && (
+                  <div className="mt-0.5 text-[11px] font-semibold" style={{ color: TONE[s.whereTone] }}>
+                    {s.where}
+                  </div>
+                )}
                 <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] leading-snug text-[#4B5568]">
                   {s.bullets.map((b) => (
                     <li key={b}>{b}</li>
@@ -83,13 +88,13 @@ export function FlowOverview({
                     <span className="inline-flex items-center gap-1 font-semibold text-sky-700">
                       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" aria-hidden /> running now
                     </span>
-                  ) : s.group === "use" ? (
+                  ) : s.display_only ? null : s.group === "use" ? (
                     "Open the chat"
                   ) : (
                     `${stepCount(s.group)} ${stepCount(s.group) === 1 ? "button" : "buttons"}`
                   )}
                 </div>
-              </button>
+              </Box>
             </li>
           );
         })}

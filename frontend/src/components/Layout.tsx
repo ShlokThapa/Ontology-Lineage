@@ -86,7 +86,7 @@ export function ChatLauncher() {
       className="group fixed bottom-6 right-6 z-[70] flex items-center gap-2 rounded-full bg-gradient-to-br from-[#001689] to-[#0099A8] py-3 pl-4 pr-5 text-sm font-semibold text-white shadow-xl ring-4 ring-white/70 transition hover:scale-105 focus:outline-none focus-visible:ring-accent"
     >
       <MessageSquare size={20} />
-      Ask AI
+      Ask me
       <Sparkles size={14} className="text-amber-300 transition group-hover:rotate-12" aria-hidden />
     </button>
   );

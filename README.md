@@ -12,7 +12,7 @@ A web app for exploring the data-lineage ontology stored in **Neo4j AuraDB**. Ev
 Every lineage page has an **Open in Query** button that loads the Cypher behind it into the editor.
 
 - **Bloom**: a search-driven, Bloom-style explorer for the lineage and policy graph (live mode only). See [Bloom explorer](#bloom-explorer) below.
-- **Chat**: the **Ask AI** button at the bottom right of every page opens a full-screen chat (Esc or Close returns you to the page; the conversation is kept). Ask in plain language about lineage, impact, PII, pipelines and what the policy documents say. See [Chatbot](#chatbot) below.
+- **Chat**: the **Ask me** button at the bottom right of every page opens a full-screen chat (Esc or Close returns you to the page; the conversation is kept). Ask in plain language about lineage, impact, PII, pipelines and what the policy documents say. See [Chatbot](#chatbot) below.
 - **Run jobs**: buttons that trigger the Fabric notebooks and pipelines (singly or in order) and run, review and undo the LLM policy mapping. See [Run jobs](#run-jobs) below.
 
 ```
@@ -312,7 +312,7 @@ Limits to know about:
 
 ## Run jobs
 
-The **Run jobs** page draws the whole process as a flow of five numbered boxes (click one to jump to its buttons), in this order, and has two tabs.
+The **Run jobs** page draws the whole process as a flow of six numbered boxes (click one to jump to its buttons; stage 5 has none), in this order, and has two tabs.
 
 **Stages 1 to 3: Fabric pipelines and notebooks.** Buttons start Fabric items, singly or as a *chain* that runs one step after another and stops at the first one that fails:
 1. **Structured data harvesting**: the upstream copy pipelines (`PL_CP_*`, PostgreSQL to the lakehouse), plus a chain that runs all five. Each is behind a confirmation.
@@ -321,7 +321,7 @@ The **Run jobs** page draws the whole process as a flow of five numbered boxes (
 4. **Policy document mapping**: has its own tab (below), because the result is reviewed before it is saved. The Fabric tab shows a card with an **Open stage 4** button instead of a second set of buttons. (The `nb_llm_policy_mapping` notebook trigger and its chains still exist in `registry.py` and the API, but have no button.)
 - Set B (`01_` to `06_`, six notebooks that were designed but never imported) is hidden from the page. It is still in `registry.py` and the API; to show it again, remove `"setb"` from `HIDDEN` in `FabricPanel.tsx` once the notebooks are imported.
 
-Stage 5 (**Ask and explore**) opens the chat.
+Stage 5 (**Graph modelling**) is a display-only box: it has no button, tab or pipeline behind it. Stage 6 (**Consumption**) opens the chat.
 
 Each job is found in the workspace by display name. The list lives in `backend/app/jobs/registry.py`, with several names where a notebook was renamed. Jobs that are missing show as such and their button is off; a job that changes data, and any run with "Write to Neo4j" ticked, asks for confirmation. Runs show their steps, Fabric's failure message, and a Cancel button; they are kept in memory, so an API restart clears the list (Fabric keeps its own history).
 
