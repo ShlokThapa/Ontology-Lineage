@@ -23,6 +23,7 @@ from .guard import ReadOnlyViolation, ensure_read_only
 from .neo4j_client import DatabaseUnavailable, Neo4jClient
 from .repository import LiveRepository, Repository
 from .chat.embeddings import LocalEmbedder, QueryEmbedder
+from .chat.lakehouse import LakehouseData
 from .chat.llm import AzureChatLLM, ChatLLM, LLMError, LLMNotConfigured
 from .chat.router import create_chat_router
 from .jobs.fabric import FabricError, FabricNotConfigured
@@ -208,8 +209,9 @@ def create_app(
     llm: ChatLLM | None = None,
     embedder: QueryEmbedder | None = None,
     jobs: JobsDeps | None = None,
+    lakehouse: LakehouseData | None = None,
 ) -> FastAPI:
-    """Build the app. `repo` / `client` / `llm` / `embedder` / `jobs` can be injected (tests)."""
+    """Build the app. `repo` / `client` / `llm` / `embedder` / `jobs` / `lakehouse` can be injected (tests)."""
     settings = settings or get_settings()
     if client is not None and repo is None:
         repo = LiveRepository(client)
@@ -443,6 +445,7 @@ def create_app(
             get_llm=chat_llm,
             embedder=embedder,
             require_user=require_user,
+            data=lakehouse or LakehouseData(settings),
         )
     )
     app.include_router(

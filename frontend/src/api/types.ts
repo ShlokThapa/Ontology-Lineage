@@ -213,13 +213,86 @@ export interface ChatGraph extends GraphData {
   truncated: boolean;
 }
 
+export interface QualityDimension {
+  key: string;
+  label: string;
+  question: string;
+  score: number | null;
+  checked: number;
+  failed: number;
+  weight: number;
+}
+
+export interface QualityTable {
+  name: string;
+  label: string;
+  rows: number;
+  columns: number;
+  score: number | null;
+  grade: string;
+  dimensions: Record<string, number | null>;
+  issues: number;
+  sampled: boolean;
+  latest: string | null;
+  key: string[] | null;
+}
+
+export interface QualityIssue {
+  severity: "high" | "medium" | "low";
+  dimension: string;
+  table: string;
+  column: string | null;
+  title: string;
+  detail: string;
+  failed: number;
+  checked: number;
+  pct: number;
+  examples: string[];
+}
+
+/** The data quality scorecard the chat shows under an answer about the quality of the data. */
+export interface QualityReport {
+  title: string;
+  scope: string;
+  as_of: string;
+  overall: {
+    score: number | null;
+    grade: string;
+    tables: number;
+    rows: number;
+    columns: number;
+    checks: number;
+    passed: number;
+    issues: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  dimensions: QualityDimension[];
+  tables: QualityTable[];
+  issues: QualityIssue[];
+  not_read: Record<string, string>;
+}
+
 export interface ChatResponse {
   answer: string;
   graph: ChatGraph | null;
+  dashboard?: QualityReport | null;
   citations: ChatCitation[];
   steps: ChatStep[];
   tokens: number;
   model: string;
+  /** True when this is an answer prepared in advance; `cached_at` says when. */
+  cached?: boolean;
+  cached_at?: string | null;
+}
+
+export interface ChatSuggestion {
+  id: string;
+  label: string;
+  question: string;
+  /** An answer for it was prepared in advance, so it comes back at once. */
+  saved: boolean;
 }
 
 export interface ChatStatus {
@@ -227,6 +300,7 @@ export interface ChatStatus {
   model: string | null;
   policy_search: boolean;
   mode: "live" | "snapshot";
+  suggestions?: ChatSuggestion[];
 }
 
 export interface Health {

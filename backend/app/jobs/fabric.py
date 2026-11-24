@@ -68,7 +68,36 @@ class TokenProvider:
     def __init__(self, settings: Settings, http: httpx.Client, clock: Callable[[], float] = time.time):
         self.s, self.http, self.clock = settings, http, clock
         self._cached: tuple[str, float] | None = None
+        self._scoped: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
+
+    def token_for(self, scope: str) -> str:
+        """A service-principal token for another resource (for example OneLake's storage scope). A pasted bearer
+        token is only good for the Fabric API, so this needs the service principal."""
+        if self.mode != "service_principal":
+            raise FabricNotConfigured(
+                "Reading lakehouse files needs a service principal: add FABRIC_TENANT_ID, FABRIC_CLIENT_ID and "
+                "FABRIC_CLIENT_SECRET to .env."
+            )
+        with self._lock:
+            hit = self._scoped.get(scope)
+            if hit and hit[1] - 60 > self.clock():
+                return hit[0]
+            try:
+                resp = self.http.post(
+                    f"{self.s.fabric_login_url.rstrip('/')}/{self.s.fabric_tenant_id}/oauth2/v2.0/token",
+                    data={
+                        "grant_type": "client_credentials", "client_id": self.s.fabric_client_id,
+                        "client_secret": self.s.fabric_client_secret, "scope": scope,
+                    },
+                )
+            except httpx.HTTPError as exc:
+                raise FabricError(f"Could not reach the sign-in service ({type(exc).__name__}).") from exc
+            if resp.status_code != 200:
+                raise FabricError(f"Sign-in with the service principal failed (HTTP {resp.status_code}).", 401)
+            body = resp.json()
+            self._scoped[scope] = (body["access_token"], self.clock() + float(body.get("expires_in", 3600)))
+            return self._scoped[scope][0]
 
     @property
     def mode(self) -> str:

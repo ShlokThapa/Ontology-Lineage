@@ -19,6 +19,8 @@ from ..neo4j_client import Neo4jClient
 from ..repository import Repository
 from .embeddings import EmbeddingUnavailable, QueryEmbedder
 from .graph import GRAPH_KINDS, clean_view
+from .lakehouse import LakehouseData, LakehouseError
+from .quality import build_report, summary_for_model
 
 log = logging.getLogger(__name__)
 
@@ -235,12 +237,37 @@ TOOL_SPECS: list[dict[str, Any]] = [
         },
         ["kind"],
     ),
+    _spec(
+        "list_data_tables",
+        "The bank's data tables in the lakehouse (customers, accounts, loans, monthly transactions): each table's "
+        "name (schema.table), how many rows it holds, and its columns with their types. Use it to see what data "
+        "exists before querying it. Personal fields are masked in the data.",
+        {},
+    ),
+    _spec(
+        "query_data",
+        "Run one read-only SELECT over the lakehouse tables and get the rows back (at most 60). Use it for exact "
+        "numbers: counts, sums, averages, groupings, comparisons, and finding the rows behind a data problem. "
+        "Tables are written schema.table, for example fact.loan_portfolio or dim.Customer. SQL dialect: DuckDB "
+        "(use LIMIT, not TOP; join strings with ||). Never list individual customers' personal details; summarise.",
+        {"sql": {"type": "string", "description": "A single SELECT (or WITH ... SELECT) statement."}},
+        ["sql"],
+    ),
+    _spec(
+        "data_quality_report",
+        "Run the data quality checks (completeness, uniqueness, validity, consistency, timeliness) over the "
+        "lakehouse tables and show the user a scorecard under your answer. Only available when the user is asking "
+        "about the quality or health of the data. You receive the headline numbers and the worst findings.",
+        {"table": {"type": "string", "description": "Optional: one table (schema.table). Omit to check every table."}},
+    ),
 ]
 
 GraphParts = tuple[str, dict[str, list[dict[str, Any]]], "str | None"]  # (title, view, cypher)
 
 GRAPH_TOOL = "show_graph"
 GRAPH_RESULT_KEY = "_graph"  # carries the full graph out of a tool result; never sent to the model
+QUALITY_TOOL = "data_quality_report"
+DASHBOARD_RESULT_KEY = "_dashboard"  # the full scorecard for the browser; the model only gets a summary
 
 
 # --- tool implementations ---------------------------------------------------------------------------
@@ -253,10 +280,15 @@ class GraphTools:
         client: Neo4jClient | None,
         embedder: QueryEmbedder | None,
         allow_graph: bool = False,
+        data: LakehouseData | None = None,
+        allow_quality: bool = False,
     ):
         self.repo = repo
         self.client = client
         self.embedder = embedder
+        self.data = data
+        # data_quality_report is offered only for a turn that is about data quality (see quality.wants_quality).
+        self.allow_quality = allow_quality
         # show_graph exists only for a turn in which the user directly asked for a graph (see chat/graph.py).
         self.allow_graph = allow_graph
         self._handlers: dict[str, Callable[..., dict[str, Any]]] = {
@@ -272,11 +304,19 @@ class GraphTools:
             "get_impact": self.get_impact,
             "list_pii_columns": self.list_pii_columns,
             "list_pipelines": self.list_pipelines,
+            "list_data_tables": self.list_data_tables,
+            "query_data": self.query_data,
+            QUALITY_TOOL: self.data_quality_report,
         }
 
     @property
     def specs(self) -> list[dict[str, Any]]:
-        return [s for s in TOOL_SPECS if self.allow_graph or s["function"]["name"] != GRAPH_TOOL]
+        hidden = set()
+        if not self.allow_graph:
+            hidden.add(GRAPH_TOOL)
+        if not self.allow_quality:
+            hidden.add(QUALITY_TOOL)
+        return [s for s in TOOL_SPECS if s["function"]["name"] not in hidden]
 
     @property
     def vector_search_ready(self) -> bool:
@@ -299,6 +339,8 @@ class GraphTools:
             return {"error": f"Semantic search is not set up on this server: {exc}"}
         except _ToolError as exc:
             return {"error": str(exc)}
+        except LakehouseError as exc:
+            return {"error": f"The data tables are not available right now: {exc}"}
 
     # -- shared -----------------------------------------------------------------------------------
 
@@ -322,6 +364,39 @@ class GraphTools:
             hints = [n.props.get("full_name") or n.name for n in hits]
             raise _ToolError(f"No asset found for '{ref}'." + (f" Did you mean: {', '.join(map(str, hints))}?" if hints else ""))
         return node
+
+    # -- lakehouse data ---------------------------------------------------------------------------
+
+    def _snapshot(self) -> Any:
+        if self.data is None or not self.data.configured:
+            raise _ToolError("The lakehouse data is not connected on this server.")
+        return self.data.snapshot()
+
+    def list_data_tables(self) -> dict[str, Any]:
+        snap = self._snapshot()
+        tables = [
+            {
+                "table": t.full_name, "rows": t.rows,
+                "columns": [{"name": n, "type": ty} for n, ty in t.columns],
+                **({"note": f"only the first {t.loaded} rows are loaded"} if t.sampled else {}),
+            }
+            for t in snap.tables
+        ]
+        return {"tables": tables, "count": len(tables), "as_of": snap.as_of.isoformat(timespec="seconds")}
+
+    def query_data(self, sql: str) -> dict[str, Any]:
+        res = self._snapshot().query(str(sql))
+        return {**res, "row_count": len(res["rows"])}
+
+    def data_quality_report(self, table: str = "") -> dict[str, Any]:
+        if not self.allow_quality:
+            raise _ToolError("A data quality scorecard is only built when the user asks about data quality.")
+        snap = self._snapshot()
+        try:
+            report = build_report(snap, (table or "").strip() or None)
+        except ValueError as exc:
+            raise _ToolError(str(exc)) from exc
+        return {**summary_for_model(report), DASHBOARD_RESULT_KEY: report}
 
     # -- policies ---------------------------------------------------------------------------------
 

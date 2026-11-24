@@ -1,0 +1,345 @@
+{
+ "generated_at": "2026-11-24T14:41:19+00:00",
+ "answers": {
+  "data-health": {
+   "question": "Give me a health check of our banking data. Where is the quality weakest, and which problems should we fix first?",
+   "prepared_at": "2026-11-24T14:40:46+00:00",
+   "response": {
+    "answer": "Verdict: The bank’s data is mostly healthy (overall score 99.6) but requires urgent fixes in the loan book and customer onboarding data to avoid risk and accounting errors.\n\n- Loan book inconsistencies — Several loans marked closed still show an outstanding balance, and some non‑performing loans are not flagged as high risk; this creates credit‑risk and provisioning exposure and should be led by Risk and Finance to reconcile balances and risk flags.  \n- KYC gaps on active accounts — A substantial number of active customer accounts belong to customers whose KYC is not verified; this raises regulatory and fraud risk and should be owned by Operations/Compliance together with the KYC team.  \n- Customer timestamp errors — A small set of customers have future-dated update timestamps, indicating data-entry or ETL timestamp problems that can confuse reporting; Data Engineering should correct the source/timestamp logic.  \n- Minor branch metadata issue — One branch record has a future opened date; Branch Ops or Data Ops can correct this low‑impact record.\n\nFix first: investigate and reconcile the closed loans showing outstanding balances (Risk + Finance lead).",
+    "graph": null,
+    "dashboard": {
+     "title": "Data quality scorecard",
+     "scope": "All 5 tables",
+     "as_of": "2026-11-24T14:40:37+00:00",
+     "overall": {
+      "score": 99.6,
+      "grade": "Needs attention",
+      "tables": 5,
+      "rows": 718,
+      "columns": 55,
+      "checks": 151,
+      "passed": 146,
+      "issues": 5,
+      "high": 4,
+      "medium": 0,
+      "low": 1
+     },
+     "dimensions": [
+      {
+       "key": "completeness",
+       "label": "Completeness",
+       "question": "Are the fields filled in?",
+       "score": 100.0,
+       "checked": 6275,
+       "failed": 0,
+       "weight": 25
+      },
+      {
+       "key": "uniqueness",
+       "label": "Uniqueness",
+       "question": "Is anything recorded twice?",
+       "score": 100.0,
+       "checked": 1436,
+       "failed": 0,
+       "weight": 20
+      },
+      {
+       "key": "validity",
+       "label": "Validity",
+       "question": "Do the values make sense?",
+       "score": 99.8,
+       "checked": 5512,
+       "failed": 9,
+       "weight": 25
+      },
+      {
+       "key": "consistency",
+       "label": "Consistency",
+       "question": "Do the tables agree with each other?",
+       "score": 98.4,
+       "checked": 3103,
+       "failed": 51,
+       "weight": 20
+      },
+      {
+       "key": "timeliness",
+       "label": "Timeliness",
+       "question": "Is the data up to date?",
+       "score": 100.0,
+       "checked": 3,
+       "failed": 0,
+       "weight": 10
+      }
+     ],
+     "tables": [
+      {
+       "name": "dim.account",
+       "label": "customer accounts",
+       "rows": 107,
+       "columns": 8,
+       "score": 98.8,
+       "grade": "Fair",
+       "dimensions": {
+        "completeness": 100.0,
+        "uniqueness": 100.0,
+        "validity": 100.0,
+        "consistency": 94.8,
+        "timeliness": null
+       },
+       "issues": 1,
+       "sampled": false,
+       "latest": null,
+       "key": [
+        "account_no"
+       ]
+      },
+      {
+       "name": "fact.loan_portfolio",
+       "label": "loans",
+       "rows": 29,
+       "columns": 13,
+       "score": 99.4,
+       "grade": "Fair",
+       "dimensions": {
+        "completeness": 100.0,
+        "uniqueness": 100.0,
+        "validity": 100.0,
+        "consistency": 97.4,
+        "timeliness": null
+       },
+       "issues": 2,
+       "sampled": false,
+       "latest": null,
+       "key": [
+        "loan_id"
+       ]
+      },
+      {
+       "name": "dim.Customer",
+       "label": "customers",
+       "rows": 60,
+       "columns": 16,
+       "score": 99.8,
+       "grade": "Fair",
+       "dimensions": {
+        "completeness": 100.0,
+        "uniqueness": 100.0,
+        "validity": 99.2,
+        "consistency": 100.0,
+        "timeliness": 100
+       },
+       "issues": 1,
+       "sampled": false,
+       "latest": "2026-11-10",
+       "key": [
+        "customer_id"
+       ]
+      },
+      {
+       "name": "dim.branch",
+       "label": "branch account records",
+       "rows": 107,
+       "columns": 11,
+       "score": 100.0,
+       "grade": "Excellent",
+       "dimensions": {
+        "completeness": 100.0,
+        "uniqueness": 100.0,
+        "validity": 99.9,
+        "consistency": 100.0,
+        "timeliness": 100
+       },
+       "issues": 1,
+       "sampled": false,
+       "latest": "2026-11-17",
+       "key": [
+        "account_id"
+       ]
+      },
+      {
+       "name": "fact.customer_monthly_txn",
+       "label": "monthly customer transaction summaries",
+       "rows": 415,
+       "columns": 7,
+       "score": 100.0,
+       "grade": "Excellent",
+       "dimensions": {
+        "completeness": 100.0,
+        "uniqueness": 100.0,
+        "validity": 100.0,
+        "consistency": 100.0,
+        "timeliness": 100
+       },
+       "issues": 0,
+       "sampled": false,
+       "latest": "2026-11-01",
+       "key": [
+        "customer_id",
+        "txn_month"
+       ]
+      }
+     ],
+     "issues": [
+      {
+       "severity": "high",
+       "dimension": "consistency",
+       "table": "fact.loan_portfolio",
+       "column": "loan_status",
+       "title": "4 of 4 closed loans still show an amount outstanding",
+       "detail": "A closed loan should have nothing left to pay.",
+       "failed": 4,
+       "checked": 4,
+       "pct": 100.0,
+       "examples": [
+        "loan_id 6",
+        "loan_id 14",
+        "loan_id 17"
+       ]
+      },
+      {
+       "severity": "high",
+       "dimension": "consistency",
+       "table": "fact.loan_portfolio",
+       "column": "loan_status",
+       "title": "3 of 5 non-performing loans are not rated high risk",
+       "detail": "Loans marked NPA (non-performing) should normally carry the highest risk rating.",
+       "failed": 3,
+       "checked": 5,
+       "pct": 60.0,
+       "examples": [
+        "loan_id 2",
+        "loan_id 8",
+        "loan_id 24"
+       ]
+      },
+      {
+       "severity": "high",
+       "dimension": "consistency",
+       "table": "dim.account",
+       "column": "account_status",
+       "title": "44 of 98 active customer accounts belong to customers whose KYC is not verified",
+       "detail": "Active accounts should only exist for customers with verified KYC (expired or pending is a compliance gap).",
+       "failed": 44,
+       "checked": 98,
+       "pct": 44.9,
+       "examples": [
+        "account 501000000061",
+        "account 501000000091",
+        "account 501000000101"
+       ]
+      },
+      {
+       "severity": "high",
+       "dimension": "validity",
+       "table": "dim.Customer",
+       "column": "updated_at",
+       "title": "8 of 60 customers have an updated at in the future",
+       "detail": "This date has not happened yet.",
+       "failed": 8,
+       "checked": 60,
+       "pct": 13.3,
+       "examples": [
+        "customer_id 11",
+        "customer_id 20",
+        "customer_id 39"
+       ]
+      },
+      {
+       "severity": "low",
+       "dimension": "validity",
+       "table": "dim.branch",
+       "column": "opened_date",
+       "title": "1 of 107 branch account records have an opened date in the future",
+       "detail": "This date has not happened yet.",
+       "failed": 1,
+       "checked": 107,
+       "pct": 0.9,
+       "examples": [
+        "account_id 84"
+       ]
+      }
+     ],
+     "freshness": [
+      {
+       "table": "dim.Customer",
+       "column": "created_at",
+       "latest": "2026-11-10",
+       "age_days": 14,
+       "score": 100
+      },
+      {
+       "table": "dim.branch",
+       "column": "updated_at",
+       "latest": "2026-11-17",
+       "age_days": 7,
+       "score": 100
+      },
+      {
+       "table": "fact.customer_monthly_txn",
+       "column": "txn_month",
+       "latest": "2026-11-01",
+       "age_days": 23,
+       "score": 100
+      }
+     ],
+     "not_read": {}
+    },
+    "citations": [],
+    "steps": [
+     {
+      "tool": "data_quality_report",
+      "arguments": {},
+      "summary": "scorecard with 5 findings",
+      "error": false
+     }
+    ],
+    "tokens": 5747,
+    "model": "gpt-5-mini-sl-obiee"
+   }
+  },
+  "branch-risk": {
+   "question": "Which branches hold the most high-risk loans, and how much is still outstanding on them compared with the rest of the loan book?",
+   "prepared_at": "2026-11-24T14:41:19+00:00",
+   "response": {
+    "answer": "Top-line: five branches hold all of the bank’s High‑Risk outstanding — together they account for about 29.42M (≈70.7%) of the total loan book outstanding of 41.63M (source: fact.loan_portfolio).\n\nKey numbers (fact.loan_portfolio):\n- Bengaluru Koramangala Br. — 1 High‑Risk loan outstanding: 7,906,376.55 (18.99% of the loan book).\n- Pune Hinjewadi Branch — 3 High‑Risk loans outstanding: 7,524,386.35 (18.08%).\n- Delhi Connaught Place Br. — 1 High‑Risk loan outstanding: 7,437,905.94 (17.87%).\n- Mumbai Fort Branch — 3 High‑Risk loans outstanding: 3,741,424.78 (8.99%).\n- Ahmedabad CG Road Branch — 3 High‑Risk loans outstanding: 2,807,239.64 (6.74%).\n- Total High‑Risk outstanding (all branches): 29,417,333.26; remaining book (Medium/Low): 12,210,042.50.\n\nWhat this means for the bank, in plain terms:\n- Concentration risk: most of the bank’s credit exposure at risk of loss is concentrated in five branches — this raises the potential impact on capital and earnings if recoveries fail (owner: Credit Risk / Portfolio Management).\n- Operational focus needed: three branches (Pune, Mumbai, Ahmedabad) have multiple High‑Risk loans and likely need intensified collections and monitoring (owner: Branch Heads + Collections).\n- Capital & provisioning implication: with ~70.7% of outstanding in High Risk, expected loss and provisioning should be reviewed (owner: Finance & Risk).\n- Compliance & customer impact: higher problem-loan density may require earlier regulatory reporting and tighter customer remediation (owner: Compliance).\n\nFirst action to take: immediate credit review of the High‑Risk loans at Bengaluru Koramangala, Pune Hinjewadi and Delhi Connaught Place to assess recoverability and set targeted collection/remediation plans (based on fact.loan_portfolio).",
+    "graph": null,
+    "dashboard": null,
+    "citations": [],
+    "steps": [
+     {
+      "tool": "list_data_tables",
+      "arguments": {},
+      "summary": "5 results",
+      "error": false
+     },
+     {
+      "tool": "query_data",
+      "arguments": {
+       "sql": "SELECT branch_name, risk_bucket, COUNT(*) AS loan_count, SUM(outstanding_amount) AS outstanding_sum\nFROM fact.loan_portfolio\nGROUP BY branch_name, risk_bucket\nORDER BY outstanding_sum DESC\nLIMIT 100;"
+      },
+      "summary": "13 results",
+      "error": false
+     },
+     {
+      "tool": "query_data",
+      "arguments": {
+       "sql": "WITH totals AS (SELECT SUM(outstanding_amount) AS total_out FROM fact.loan_portfolio),\nhr AS (SELECT branch_name, SUM(outstanding_amount) AS high_out, COUNT(*) AS high_loans FROM fact.loan_portfolio WHERE risk_bucket = 'High Risk' GROUP BY branch_name)\nSELECT hr.branch_name, hr.high_loans, hr.high_out, ROUND(hr.high_out / totals.total_out * 100, 2) AS pct_of_book\nFROM hr CROSS JOIN totals\nORDER BY hr.high_out DESC\nLIMIT 5;"
+      },
+      "summary": "5 results",
+      "error": false
+     },
+     {
+      "tool": "query_data",
+      "arguments": {
+       "sql": "SELECT SUM(outstanding_amount) AS total_outstanding, SUM(CASE WHEN risk_bucket='High Risk' THEN outstanding_amount ELSE 0 END) AS total_high_risk\nFROM fact.loan_portfolio;"
+      },
+      "summary": "1 result",
+      "error": false
+     }
+    ],
+    "tokens": 19267,
+    "model": "gpt-5-mini-sl-obiee"
+   }
+  }
+ }
+}

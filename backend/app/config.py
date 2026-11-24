@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     azure_openai_version_3: str = Field(default="", validation_alias=AliasChoices("AZURE_OPEN_AI_VERSION_3"))
     chat_max_tool_rounds: int = Field(default=6, ge=1, le=12)
     chat_timeout_seconds: float = Field(default=90, gt=0, le=600)
+    # The lakehouse tables the chat can look at: which lakehouse, which schemas (comma-separated), how long a
+    # copy is reused, and a cap on rows read per table.
+    chat_use_cache: bool = True  # answer the suggested questions from cached_answers.json (see chat/answer_cache.py)
+    chat_cache_file: str = ""  # another file to read the saved answers from (default: chat/cached_answers.json)
+    chat_lakehouse_name: str = "Ontology_Lineage"
+    chat_data_schemas: str = "dim,fact"
+    chat_data_ttl_seconds: int = Field(default=900, ge=0, le=86_400)
+    chat_data_max_rows: int = Field(default=250_000, ge=1000, le=5_000_000)
+    fabric_onelake_url: str = "https://onelake.dfs.fabric.microsoft.com"
 
     # --- Jobs page: Fabric triggers -----------------------------------------------------------------
     # Which workspace: an id, or a name that is looked up (the project's workspace is called Ontology_Lineage).

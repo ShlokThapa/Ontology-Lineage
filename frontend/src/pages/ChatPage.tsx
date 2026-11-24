@@ -1,8 +1,12 @@
-import { AlertTriangle, ChevronDown, ChevronRight, FileText, Network, RotateCcw, Send, Sparkles, Square, Wrench, X } from "lucide-react";
+import {
+  Activity, AlertTriangle, BadgeCheck, Building2, ChevronDown, ChevronRight, FileText, GitFork, Lock, Network, RotateCcw, Scale, Send,
+  ShieldCheck, Sparkles, Square, Wallet, Wrench, X, Zap, type LucideIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
-import type { ChatCitation, ChatGraph, ChatStatus, ChatStep, ChatTurn } from "../api/types";
+import type { ChatCitation, ChatGraph, ChatStatus, ChatStep, ChatTurn, QualityReport } from "../api/types";
 import { GraphView } from "../components/GraphView";
+import { QualityDashboard } from "../components/QualityDashboard";
 import { ErrorPanel } from "../components/ui";
 import { Markdown } from "../lib/markdown";
 import { useApp } from "../store/app";
@@ -14,17 +18,23 @@ interface Item {
   citations?: ChatCitation[];
   steps?: ChatStep[];
   graph?: ChatGraph | null;
+  dashboard?: QualityReport | null;
+  /** When this answer was prepared in advance (not worked out just now). */
+  preparedAt?: string | null;
   model?: string;
 }
 
-const STARTERS = [
-  "Which columns hold PII, and is any of it moved to Fabric unmasked?",
-  "What does the loan policy say about risk classification?",
-  "What is affected if I change banking.loans?",
-  "Which policies govern customer data?",
-  "Which pipelines write to the Ontology_Lineage lakehouse?",
-  "Show me a graph of the lineage of fact.loan_portfolio.risk_bucket",
-];
+// The start-screen questions come from the server (with the ones it has saved answers for); this only picks an icon.
+const SUGGESTION_ICON: Record<string, LucideIcon> = {
+  "data-health": Activity,
+  "kyc-gaps": ShieldCheck,
+  "loan-risk-exceptions": Scale,
+  "branch-risk": Building2,
+  "customer-protection": Lock,
+  "change-impact": GitFork,
+  "dormant-money": Wallet,
+  "trust-risk-rating": BadgeCheck,
+};
 
 const TOOL_LABEL: Record<string, string> = {
   search_policies: "Searched policies",
@@ -37,6 +47,9 @@ const TOOL_LABEL: Record<string, string> = {
   get_impact: "Checked impact of",
   list_pii_columns: "Listed PII columns",
   list_pipelines: "Listed pipelines",
+  list_data_tables: "Looked at the data tables",
+  query_data: "Queried the data",
+  data_quality_report: "Checked data quality",
 };
 
 // The server keeps no conversation, so the browser sends it each time; cap what goes over the wire.
@@ -45,13 +58,21 @@ const MAX_HISTORY = 30;
 function stepArgs(args: Record<string, unknown>): string {
   return Object.values(args)
     .filter((v) => v !== undefined && v !== null && v !== "")
-    .map(String)
+    .map((v) => {
+      const s = String(v);
+      return s.length > 160 ? `${s.slice(0, 160)}…` : s;
+    })
     .join(", ");
 }
 
 function sectionLabel(c: ChatCitation): string {
   const where = c.section_path ?? c.heading;
   return [c.doc_title ?? c.doc_id, where].filter(Boolean).join(" › ");
+}
+
+function preparedLabel(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 export function ChatPage() {
@@ -103,7 +124,10 @@ export function ChatPage() {
       const res = await api.chat(history.slice(-MAX_HISTORY), ctrl.signal);
       setItems((prev) => [
         ...prev,
-        { id: nextId.current++, role: "assistant", content: res.answer, graph: res.graph, citations: res.citations, steps: res.steps, model: res.model },
+        {
+          id: nextId.current++, role: "assistant", content: res.answer, graph: res.graph, dashboard: res.dashboard, citations: res.citations,
+          steps: res.steps, model: res.model, preparedAt: res.cached ? (res.cached_at ?? "") : null,
+        },
       ]);
     } catch (e) {
       if ((e as Error)?.name === "AbortError") return;
@@ -152,7 +176,7 @@ export function ChatPage() {
         <div>
           <h1 className="font-display text-base font-bold leading-tight text-accent">Ask Lineage Studio</h1>
           <p className="text-[11px] text-ink-400">
-            Answers come from your lineage graph and policy documents, read-only.
+            Ask in plain language. It is read-only: nothing you ask can change anything.
             {status?.model && <span className="ml-1 font-mono">Model: {status.model}</span>}
           </p>
         </div>
@@ -193,25 +217,39 @@ export function ChatPage() {
           )}
 
           {items.length === 0 && !loading && (
-            <div className="flex flex-col items-center gap-4 py-10 text-center">
+            <div className="flex flex-col items-center gap-4 py-8 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-white shadow-soft">
                 <Sparkles size={22} />
               </div>
               <div>
                 <div className="text-sm font-semibold text-ink-100">What would you like to know?</div>
-                <div className="mt-1 text-xs text-ink-400">Lineage, impact, PII handling, pipelines, and what your policies say.</div>
+                <div className="mt-1 text-xs text-ink-400">Ask in your own words, or start with one of these.</div>
               </div>
-              <div className="flex max-w-xl flex-wrap justify-center gap-2">
-                {STARTERS.map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => send(q)}
-                    disabled={notConfigured}
-                    className="rounded-full border border-ink-600 bg-white px-3 py-1.5 text-left text-xs text-ink-200 shadow-soft transition hover:border-accent hover:text-accent disabled:opacity-50"
-                  >
-                    {q}
-                  </button>
-                ))}
+              <div className="grid w-full gap-2.5 sm:grid-cols-2">
+                {(status?.suggestions ?? []).map((q) => {
+                  const Icon = SUGGESTION_ICON[q.id] ?? Sparkles;
+                  return (
+                    <button
+                      key={q.id}
+                      onClick={() => send(q.question)}
+                      disabled={notConfigured}
+                      className="group flex flex-col gap-1.5 rounded-xl border border-ink-600 bg-white p-3.5 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-accent hover:shadow-md disabled:opacity-50"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#E8F4F6] text-accent group-hover:bg-accent group-hover:text-white">
+                          <Icon size={15} />
+                        </span>
+                        <span className="flex-1 text-[13px] font-semibold text-[#1B2B4B]">{q.label}</span>
+                        {q.saved && (
+                          <span className="flex items-center gap-0.5 rounded-full bg-[#FFF1DC] px-1.5 py-0.5 text-[10px] font-semibold text-[#A85A07]" title="Answers straight away">
+                            <Zap size={10} /> Instant
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-xs leading-snug text-ink-300">{q.question}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -225,7 +263,7 @@ export function ChatPage() {
                   <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent" style={{ animationDelay: `${d * 140}ms` }} />
                 ))}
               </span>
-              Looking through the graph…
+              Looking into it…
             </div>
           )}
 
@@ -256,7 +294,7 @@ export function ChatPage() {
             rows={1}
             maxLength={8000}
             aria-label="Your question"
-            placeholder="Ask about lineage, PII, pipelines or policies…  (Enter to send, Shift+Enter for a new line)"
+            placeholder="Ask about your data, lineage, PII, pipelines or policies…  (Enter to send, Shift+Enter for a new line)"
             className="max-h-40 min-h-[40px] flex-1 resize-none rounded-xl border border-ink-600 bg-white px-3 py-2 text-[13px] text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
           {loading ? (
@@ -358,7 +396,16 @@ function AnswerCard({ item }: { item: Item }) {
       <div className="min-w-0 max-w-full flex-1 rounded-2xl rounded-bl-md border border-ink-700 bg-white px-4 py-3 shadow-soft">
         <Markdown text={item.content} />
 
+        {item.dashboard && <QualityDashboard report={item.dashboard} />}
+
         {item.graph && <GraphBlock graph={item.graph} />}
+
+        {item.preparedAt !== undefined && item.preparedAt !== null && (
+          <div className="mt-3 flex items-center gap-1.5 border-t border-ink-700 pt-2 text-[11px] text-ink-400">
+            <Zap size={11} className="text-[#E0912F]" />
+            Prepared answer{item.preparedAt ? ` from ${preparedLabel(item.preparedAt)}` : ""}. Ask a follow-up for the latest.
+          </div>
+        )}
 
         {citations.length > 0 && (
           <div className="mt-3 border-t border-ink-700 pt-2">

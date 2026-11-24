@@ -6,3 +6,4 @@ pydantic-settings>=2.4,<3
 openai>=1.40
 fastembed>=0.4
 truststore>=0.9
+duckdb>=1.1

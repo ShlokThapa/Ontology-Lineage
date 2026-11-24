@@ -225,7 +225,7 @@ def test_agent_runs_tools_then_answers_and_collects_citations(live_tools) -> Non
                               "section_path": "3 > 3.2 Risk buckets", "heading": "3.2 Risk buckets"}]
     assert res.tokens == 20
     first_msgs, first_tools = llm.sent[0]
-    assert first_msgs[0] == {"role": "system", "content": SYSTEM_PROMPT} and len(first_tools) == 11
+    assert first_msgs[0] == {"role": "system", "content": SYSTEM_PROMPT} and len(first_tools) == 13
     second = llm.sent[1][0]
     assert second[-1]["role"] == "tool" and second[-1]["tool_call_id"] == "call_search_policies"
     assert second[-2]["tool_calls"][0]["function"]["name"] == "search_policies"
@@ -331,7 +331,9 @@ def test_azure_content_filter_gets_a_clear_message(monkeypatch) -> None:
 def test_api_chat_status(repo) -> None:
     with make_client(repo, None, AZURE_OPEN_AI_KEY="k", AZURE_OPEN_AI_ENDPOINT="https://e", AZURE_OPEN_AI_MODEL_NAME="dep") as c:
         s = c.get("/api/chat/status").json()
+    suggestions = s.pop("suggestions")
     assert s == {"configured": True, "model": "dep", "policy_search": False, "mode": "snapshot"}  # no client in snapshot mode
+    assert len(suggestions) >= 6 and all({"id", "label", "question", "saved"} <= set(q) for q in suggestions)
 
 
 # --- graph display ----------------------------------------------------------------------------------
@@ -393,8 +395,8 @@ def test_wants_graph_is_false_otherwise(text) -> None:
 
 def test_show_graph_is_only_offered_when_allowed(repo) -> None:
     off, on = GraphTools(repo, None, FakeEmbedder()), GraphTools(repo, None, FakeEmbedder(), allow_graph=True)
-    assert GRAPH_TOOL not in [s["function"]["name"] for s in off.specs] and len(off.specs) == 11
-    assert GRAPH_TOOL in [s["function"]["name"] for s in on.specs] and len(on.specs) == 12
+    assert GRAPH_TOOL not in [s["function"]["name"] for s in off.specs] and len(off.specs) == 13
+    assert GRAPH_TOOL in [s["function"]["name"] for s in on.specs] and len(on.specs) == 14
     # Defence in depth: even if the model names the tool anyway, it is refused.
     assert "directly asks" in off.call(GRAPH_TOOL, {"kind": "pii"})["error"]
 
