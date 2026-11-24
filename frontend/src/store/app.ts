@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import type { Health, SchemaInfo } from "../api/types";
 
-export type Page = "chat" | "query" | "bloom" | "lineage" | "impact" | "pii" | "pipelines" | "schema";
-export const PAGES: Page[] = ["chat", "query", "bloom", "lineage", "impact", "pii", "pipelines", "schema"];
+// The chat is not a page: it is a full-screen overlay opened from the launcher on the right (see `chatOpen`).
+export type Page = "jobs" | "query" | "bloom" | "lineage" | "impact" | "pii" | "pipelines" | "schema";
+export const PAGES: Page[] = ["jobs", "query", "bloom", "lineage", "impact", "pii", "pipelines", "schema"];
 
 interface PendingQuery {
   text: string;
@@ -15,6 +16,10 @@ interface AppState {
   pageParams: Record<string, string>;
   navigate: (page: Page, params?: Record<string, string>) => void;
   syncFromHash: () => void;
+
+  /** The AI chat, shown full screen over whatever page is open. */
+  chatOpen: boolean;
+  setChatOpen: (v: boolean) => void;
 
   pendingQuery: PendingQuery | null;
   /** Load Cypher into the Query page editor (and optionally run it). */
@@ -49,21 +54,26 @@ const initial = parseHash();
 export const useApp = create<AppState>((set) => ({
   page: initial.page,
   pageParams: initial.params,
+  // Going to a page closes the chat, so a link or button inside the chat lands on something visible.
   navigate: (page, params = {}) => {
     const hash = toHash(page, params);
     if (window.location.hash !== hash) window.history.pushState(null, "", hash);
-    set({ page, pageParams: params });
+    set({ page, pageParams: params, chatOpen: false });
   },
   syncFromHash: () => {
     const { page, params } = parseHash();
     set({ page, pageParams: params });
   },
 
+  // An old "#/chat" link still opens the chat.
+  chatOpen: /^#\/?chat(\?|$)/.test(window.location.hash),
+  setChatOpen: (chatOpen) => set({ chatOpen }),
+
   pendingQuery: null,
   openInQuery: (text, run = false) => {
     const hash = toHash("query", {});
     if (window.location.hash !== hash) window.history.pushState(null, "", hash);
-    set({ page: "query", pageParams: {}, pendingQuery: { text, run, nonce: Date.now() } });
+    set({ page: "query", pageParams: {}, chatOpen: false, pendingQuery: { text, run, nonce: Date.now() } });
   },
   clearPendingQuery: () => set({ pendingQuery: null }),
 

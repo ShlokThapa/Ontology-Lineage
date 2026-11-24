@@ -25,6 +25,8 @@ from .repository import LiveRepository, Repository
 from .chat.embeddings import LocalEmbedder, QueryEmbedder
 from .chat.llm import AzureChatLLM, ChatLLM, LLMError, LLMNotConfigured
 from .chat.router import create_chat_router
+from .jobs.fabric import FabricError, FabricNotConfigured
+from .jobs.router import JobsDeps, create_jobs_router
 from .explore.phrases import PhraseStore
 from .explore.router import create_explore_router
 from .snapshot import SnapshotRepository
@@ -68,6 +70,15 @@ def _install_error_handlers(app: FastAPI) -> None:
     async def _llm_error(_: Request, exc: LLMError) -> JSONResponse:
         log.warning("Language model call failed: %s", exc)
         return _error(502, "LineageStudio.LlmError", str(exc))
+
+    @app.exception_handler(FabricNotConfigured)
+    async def _fabric_not_configured(_: Request, exc: FabricNotConfigured) -> JSONResponse:
+        return _error(503, "LineageStudio.FabricNotConfigured", str(exc))
+
+    @app.exception_handler(FabricError)
+    async def _fabric_error(_: Request, exc: FabricError) -> JSONResponse:
+        log.warning("Fabric call failed: %s", exc)
+        return _error(502, "LineageStudio.FabricError", str(exc))  # the message never contains a token or secret
 
     @app.exception_handler(Neo4jError)
     async def _neo4j(_: Request, exc: Neo4jError) -> JSONResponse:
@@ -196,8 +207,9 @@ def create_app(
     phrase_store: PhraseStore | None = None,
     llm: ChatLLM | None = None,
     embedder: QueryEmbedder | None = None,
+    jobs: JobsDeps | None = None,
 ) -> FastAPI:
-    """Build the app. `repo` / `client` / `llm` / `embedder` can be injected (tests)."""
+    """Build the app. `repo` / `client` / `llm` / `embedder` / `jobs` can be injected (tests)."""
     settings = settings or get_settings()
     if client is not None and repo is None:
         repo = LiveRepository(client)
@@ -432,6 +444,9 @@ def create_app(
             embedder=embedder,
             require_user=require_user,
         )
+    )
+    app.include_router(
+        create_jobs_router(settings=settings, deps=jobs or JobsDeps(), get_neo4j=graph_client, require_user=require_user)
     )
     # Bloom explorer (live mode only: live_client() returns 503 in snapshot mode)
     app.include_router(

@@ -47,7 +47,7 @@ ORDER BY score DESC
 
 POLICY_SECTION = """
 MATCH (d:PolicyDocument)-[:HAS_CHUNK]->(c:PolicyChunk {chunk_id: $chunk_id})
-OPTIONAL MATCH (c)-[g:GOVERNS]->(a:Asset)
+OPTIONAL MATCH (c)-[g:GOVERNS]->(a:Asset) WHERE coalesce(g.status, 'accepted') = 'accepted'
 WITH d, c, collect(CASE WHEN a IS NULL THEN null ELSE
        {name: a.name, table: a.table, full_name: a.full_name, term: g.term, method: g.method} END) AS governs
 RETURN d.doc_id AS doc_id, d.title AS doc_title, c.chunk_id AS chunk_id, c.section_path AS section_path,
@@ -58,6 +58,7 @@ POLICIES_FOR_ASSET = """
 MATCH (a:Asset)
 WHERE a.id = $id OR EXISTS { (:Asset {id: $id})-[:HAS_COLUMN]->(a) }
 MATCH (d:PolicyDocument)-[:HAS_CHUNK]->(c:PolicyChunk)-[g:GOVERNS]->(a)
+WHERE coalesce(g.status, 'accepted') = 'accepted'
 RETURN a.name AS asset, a.table AS asset_table, d.doc_id AS doc_id, d.title AS doc_title,
        c.chunk_id AS chunk_id, c.section_path AS section_path, c.heading AS heading, c.text AS text,
        g.term AS term, g.method AS method

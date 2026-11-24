@@ -5,9 +5,11 @@ import {
   Info,
   Keyboard,
   MessageSquare,
+  Play,
   Network,
   RefreshCw,
   ShieldAlert,
+  Sparkles,
   SquareTerminal,
   Workflow,
   X,
@@ -22,7 +24,7 @@ import { type Page, useApp } from "../store/app";
 import { toast, useToasts } from "../store/toasts";
 
 const NAV: { page: Page; label: string; icon: React.ReactNode }[] = [
-  { page: "chat", label: "Chat", icon: <MessageSquare size={20} /> },
+  { page: "jobs", label: "Run jobs", icon: <Play size={20} /> },
   { page: "query", label: "Query", icon: <SquareTerminal size={20} /> },
   { page: "bloom", label: EXPLORER_MENU_LABEL, icon: <Flower2 size={20} /> },
   { page: "lineage", label: "Lineage Explorer", icon: <GitFork size={20} /> },
@@ -68,6 +70,25 @@ export function Sidebar() {
         <Keyboard size={18} />
       </button>
     </nav>
+  );
+}
+
+/** The chatbot button on the right edge of every page. Clicking it opens the chat full screen. */
+export function ChatLauncher() {
+  const chatOpen = useApp((s) => s.chatOpen);
+  const setChatOpen = useApp((s) => s.setChatOpen);
+  if (chatOpen) return null;
+  return (
+    <button
+      onClick={() => setChatOpen(true)}
+      aria-label="Open the AI chat"
+      title="Ask the AI about your lineage and policies"
+      className="group fixed bottom-6 right-6 z-[70] flex items-center gap-2 rounded-full bg-gradient-to-br from-[#001689] to-[#0099A8] py-3 pl-4 pr-5 text-sm font-semibold text-white shadow-xl ring-4 ring-white/70 transition hover:scale-105 focus:outline-none focus-visible:ring-accent"
+    >
+      <MessageSquare size={20} />
+      Ask AI
+      <Sparkles size={14} className="text-amber-300 transition group-hover:rotate-12" aria-hidden />
+    </button>
   );
 }
 
@@ -163,7 +184,7 @@ export function Toasts() {
   const toasts = useToasts((s) => s.toasts);
   const dismiss = useToasts((s) => s.dismiss);
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-80 flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-24 right-4 z-[100] flex w-80 flex-col gap-2">
       {toasts.map((t) => {
         const icon =
           t.kind === "success" ? (

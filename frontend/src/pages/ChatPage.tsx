@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, ChevronRight, FileText, Network, RotateCcw, Send, Sparkles, Square, Wrench } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, FileText, Network, RotateCcw, Send, Sparkles, Square, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { ChatCitation, ChatGraph, ChatStatus, ChatStep, ChatTurn } from "../api/types";
@@ -64,6 +64,13 @@ export function ChatPage() {
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const chatOpen = useApp((s) => s.chatOpen);
+  const setChatOpen = useApp((s) => s.setChatOpen);
+
+  // Opening the chat puts the cursor in the question box.
+  useEffect(() => {
+    if (chatOpen) inputRef.current?.focus();
+  }, [chatOpen]);
 
   const refreshStatus = useCallback(() => {
     api.chatStatus().then(setStatus).catch(() => setStatus(null));
@@ -149,13 +156,23 @@ export function ChatPage() {
             {status?.model && <span className="ml-1 font-mono">Model: {status.model}</span>}
           </p>
         </div>
-        <button
-          onClick={reset}
-          disabled={items.length === 0 && !input}
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-ink-300 hover:bg-ink-700 disabled:opacity-40"
-        >
-          <RotateCcw size={13} /> New chat
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={reset}
+            disabled={items.length === 0 && !input}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-ink-300 hover:bg-ink-700 disabled:opacity-40"
+          >
+            <RotateCcw size={13} /> New chat
+          </button>
+          <button
+            onClick={() => setChatOpen(false)}
+            title="Close the chat (Esc)"
+            aria-label="Close the chat"
+            className="flex items-center gap-1.5 rounded-md border border-ink-600 px-2.5 py-1.5 text-xs font-semibold text-ink-200 hover:border-accent hover:text-accent"
+          >
+            <X size={14} /> Close
+          </button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">

@@ -9,3 +9,8 @@ run-app.path.txt
 
 # Local embedding model (downloaded by scripts/fetch_embedding_model.py)
 .model_cache/
+
+# Mapping job output and cache
+reports/
+.mapping_cache/
+dist/

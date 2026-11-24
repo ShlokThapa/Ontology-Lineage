@@ -1,8 +1,9 @@
 import { useEffect } from "react";
-import { ShortcutsHelp, Sidebar, Toasts, TopBar } from "./components/Layout";
+import { ChatLauncher, ShortcutsHelp, Sidebar, Toasts, TopBar } from "./components/Layout";
 import { BloomPage } from "./pages/BloomPage";
 import { ChatPage } from "./pages/ChatPage";
 import { ImpactAnalysis } from "./pages/ImpactAnalysis";
+import { JobsPage } from "./pages/JobsPage";
 import { LineageExplorer } from "./pages/LineageExplorer";
 import { PiiTracker } from "./pages/PiiTracker";
 import { Pipelines } from "./pages/Pipelines";
@@ -24,8 +25,22 @@ export default function App() {
     };
   }, [syncFromHash]);
 
+  const chatOpen = useApp((s) => s.chatOpen);
+  const setChatOpen = useApp((s) => s.setChatOpen);
+  const showShortcuts = useApp((s) => s.showShortcuts);
+
+  // Esc closes the chat (unless the shortcuts help is on top: that one takes the key first).
+  useEffect(() => {
+    if (!chatOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !showShortcuts) setChatOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chatOpen, showShortcuts, setChatOpen]);
+
   // Lineage pages re-mount when their parameters change so local state (direction, depth) follows the URL.
-  const key = page === "query" || page === "bloom" || page === "chat" ? page : `${page}:${JSON.stringify(pageParams)}`;
+  const key = page === "query" || page === "bloom" ? page : `${page}:${JSON.stringify(pageParams)}`;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-ink-950 text-ink-100">
@@ -41,12 +56,9 @@ export default function App() {
           <div className={page === "bloom" ? "h-full" : "hidden"}>
             <BloomPage />
           </div>
-          {/* Chat stays mounted too, so the conversation survives switching pages. */}
-          <div className={page === "chat" ? "h-full" : "hidden"}>
-            <ChatPage />
-          </div>
-          {page !== "query" && page !== "bloom" && page !== "chat" && (
+          {page !== "query" && page !== "bloom" && (
             <div key={key} className="h-full">
+              {page === "jobs" && <JobsPage />}
               {page === "lineage" && <LineageExplorer />}
               {page === "impact" && <ImpactAnalysis />}
               {page === "pii" && <PiiTracker />}
@@ -56,6 +68,17 @@ export default function App() {
           )}
         </main>
       </div>
+      {/* The chat: always mounted so the conversation survives closing it, full screen while open. */}
+      <div
+        className={chatOpen ? "fixed inset-0 z-[80] bg-ink-950" : "hidden"}
+        role="dialog"
+        aria-modal={chatOpen}
+        aria-label="AI chat"
+        aria-hidden={!chatOpen}
+      >
+        <ChatPage />
+      </div>
+      <ChatLauncher />
       <Toasts />
       <ShortcutsHelp />
     </div>
