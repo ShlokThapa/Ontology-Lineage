@@ -2,7 +2,20 @@ import type {
   Direction,
   GraphData,
   Health,
+  ChatResponse,
+  ChatStatus,
+  ChatTurn,
+  FabricStatus,
   ImpactRow,
+  JobRun,
+  JobsConfig,
+  MappingCheck,
+  MappingLink,
+  ApplyResult,
+  MappingPastRun,
+  MappingReport,
+  MappingReportInfo,
+  MappingRunOptions,
   ImpactSummary,
   Level,
   NeoGraph,
@@ -96,6 +109,37 @@ export const api = {
   pii: () => request<PageResponse<PiiRow, PiiSummary>>("/api/pii"),
 
   pipelines: () => request<PageResponse<PipelineRow, PipelineSummary>>("/api/pipelines"),
+
+  chatStatus: () => request<ChatStatus>("/api/chat/status"),
+
+  chat: (messages: ChatTurn[], signal?: AbortSignal) =>
+    request<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify({ messages }), signal }),
+
+  /** The Jobs page: Fabric triggers and the policy-mapping job. */
+  jobs: {
+    config: () => request<JobsConfig>("/api/jobs/config"),
+    fabricStatus: (refresh = false) => request<FabricStatus>("/api/jobs/fabric/status", { query: { refresh } }),
+    runJob: (job: string, parameters: Record<string, unknown>, confirm: boolean) =>
+      request<JobRun>("/api/jobs/fabric/run", { method: "POST", body: JSON.stringify({ job, parameters, confirm }) }),
+    runChain: (chain: string, overrides: Record<string, Record<string, unknown>>, confirm: boolean) =>
+      request<JobRun>("/api/jobs/fabric/chain", { method: "POST", body: JSON.stringify({ chain, overrides, confirm }) }),
+    runs: () => request<JobRun[]>("/api/jobs/runs"),
+    cancel: (id: string) => request<JobRun>(`/api/jobs/runs/${id}/cancel`, { method: "POST" }),
+    mappingCheck: () => request<MappingCheck>("/api/jobs/mapping/check", { method: "POST" }),
+    mappingRun: (opts: MappingRunOptions) => request<JobRun>("/api/jobs/mapping/run", { method: "POST", body: JSON.stringify(opts) }),
+    mappingRuns: () => request<MappingPastRun[]>("/api/jobs/mapping/runs"),
+    mappingReports: () => request<MappingReportInfo[]>("/api/jobs/mapping/reports"),
+    mappingReport: (runId: string) => request<MappingReport>("/api/jobs/mapping/report", { query: { run_id: runId } }),
+    applyReport: (runId: string, accept: { chunk_id: string; asset_id: string }[], reject: { chunk_id: string; asset_id: string }[]) =>
+      request<ApplyResult>("/api/jobs/mapping/apply", { method: "POST", body: JSON.stringify({ run_id: runId, accept, reject }) }),
+    mappingLinks: (runId: string, status?: string) => request<MappingLink[]>("/api/jobs/mapping/links", { query: { run_id: runId, status } }),
+    decide: (runId: string, status: "accepted" | "rejected", decisions: { chunk_id: string; asset_id: string }[]) =>
+      request<{ changed: number }>("/api/jobs/mapping/decide", { method: "POST", body: JSON.stringify({ run_id: runId, status, decisions }) }),
+    review: (runId: string, status: "accepted" | "rejected", minConfidence: "high" | "medium") =>
+      request<{ changed: number }>("/api/jobs/mapping/review", { method: "POST", body: JSON.stringify({ run_id: runId, status, min_confidence: minConfidence }) }),
+    restore: (runId: string) =>
+      request<{ retracted: number; restored: number }>("/api/jobs/mapping/restore", { method: "POST", body: JSON.stringify({ run_id: runId }) }),
+  },
 
   concepts: (includeTables: boolean) =>
     request<PageResponse>("/api/concepts", { query: { include_tables: includeTables } }),

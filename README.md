@@ -1,6 +1,6 @@
 # Lineage Studio
 
-A read-only web app for exploring the data-lineage ontology stored in **Neo4j AuraDB**:
+A web app for exploring the data-lineage ontology stored in **Neo4j AuraDB**. Everything reads only, except the **Run jobs** page (below), which can start Fabric jobs and change policy links:
 
 - **Query**: an Aura-style Cypher workbench. It has a CodeMirror editor with autocomplete, parameters and history, plus a stream of result frames with Graph, Table and Raw views.
 - **Lineage Explorer**: column- or table-level lineage, upstream, downstream or both, rendered left to right.
@@ -12,6 +12,8 @@ A read-only web app for exploring the data-lineage ontology stored in **Neo4j Au
 Every lineage page has an **Open in Query** button that loads the Cypher behind it into the editor.
 
 - **Bloom**: a search-driven, Bloom-style explorer for the lineage and policy graph (live mode only). See [Bloom explorer](#bloom-explorer) below.
+- **Chat**: the **Ask me** button at the bottom right of every page opens a full-screen chat (Esc or Close returns you to the page; the conversation is kept). Ask in plain language about lineage, impact, PII, pipelines and what the policy documents say. See [Chatbot](#chatbot) below.
+- **Run jobs**: buttons that trigger the Fabric notebooks and pipelines (singly or in order) and run, review and undo the LLM policy mapping. See [Run jobs](#run-jobs) below.
 
 ```
 backend/    FastAPI + neo4j driver (Python 3.11+)
@@ -41,6 +43,15 @@ Copy `.env.example` to `.env` in the repo root and fill it in. Settings are read
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of allowed browser origins. |
 | `MAX_ROWS` | `1000` | Hard row limit for user queries. A result frame shows a warning when it is reached. |
 | `QUERY_TIMEOUT_SECONDS` | `30` | Transaction timeout for user queries. |
+| `AZURE_OPEN_AI_KEY` | | Chatbot: Azure OpenAI key. Stays on the server. |
+| `AZURE_OPEN_AI_ENDPOINT` | | Chatbot: e.g. `https://<resource>.openai.azure.com` |
+| `AZURE_OPEN_AI_MODEL_NAME` | | Chatbot: the Azure **deployment** name. |
+| `AZURE_OPEN_AI_VERSION` | `2024-12-01-preview` | Chatbot: Azure OpenAI API version. |
+| `FABRIC_WORKSPACE_ID` / `FABRIC_WORKSPACE_NAME` | | Run jobs: the Fabric workspace (an id, or a name that is looked up; the name defaults to `Ontology_Lineage`). |
+| `FABRIC_TENANT_ID`, `FABRIC_CLIENT_ID`, `FABRIC_CLIENT_SECRET` | | Run jobs: sign in as a service principal (add it to the workspace as Contributor or higher). |
+| `FABRIC_ACCESS_TOKEN` | | Run jobs: or paste a bearer token for a quick try (it expires, usually within the hour). |
+| `FABRIC_PARAM_STYLE` | `array` | Run jobs: how notebook parameters are sent, `array` or `execution_data`. |
+| `MAPPING_UI_WRITE` | `true` | Run jobs: allow the page to write to Neo4j. `false` makes every writing button refuse. |
 
 ## Run locally
 
@@ -124,6 +135,7 @@ The UI and API share an origin in the container, so `CORS_ORIGINS` only matters 
 ## Security model
 
 - Credentials live only on the server.
+- **Writes.** The Cypher workbench, lineage pages and chatbot are read-only. The only code that writes to Neo4j is the policy-mapping writer, reachable from the Run jobs page while `MAPPING_UI_WRITE` is on (it is, by default, for this proof of concept, and there is no login). Set it to `false` and every writing button refuses.
 - User Cypher is protected in **two layers**:
   1. A static guard (`backend/app/guard.py`) rejects `CREATE`, `MERGE`, `DELETE`, `DETACH`, `SET`, `REMOVE`, `DROP`, `FOREACH`, `LOAD CSV`, `CALL {…} IN TRANSACTIONS`, admin commands, write/import `apoc.*` procedures and admin `dbms.*` procedures. Keywords inside strings, comments and back-tick identifiers are ignored. Rejected queries get a friendly 400 error.
   2. Every query runs in a READ access-mode transaction (`execute_read`), so the database itself refuses writes.
@@ -146,6 +158,8 @@ The UI and API share an origin in the container, so `CORS_ORIGINS` only matters 
 | `GET /api/pii` | PII rows, KPIs, graph |
 | `GET /api/pipelines` | activity rows, graph |
 | `GET /api/concepts?include_tables=` | business ontology |
+| `GET /api/chat/status` | chatbot configured? model name, is policy search ready? |
+| `POST /api/chat` `{messages}` | the conversation so far → `{answer, graph, citations, steps, tokens, model}` |
 
 Lineage endpoints return `{nodes, edges, rows?, summary?, cypher}`. Here `cypher` is the query that was used, with the start id inlined, ready for "Open in Query". `id` accepts a full id (`fabric:Ontology_Lineage.fact.loan_portfolio.risk_bucket`) or a suffix (`fact.loan_portfolio.risk_bucket`, `banking.customers`).
 
@@ -229,6 +243,101 @@ Bloom API endpoints (under `/api/explore`):
 - `GET /values`
 - `GET|POST|PUT|DELETE /phrases`
 - `POST /phrases/{id}/run`
+
+## Chatbot
+
+The **Chat** page answers questions in plain language. The browser sends the whole conversation to `POST /api/chat`; the server keeps none.
+
+How it answers:
+- **Fixed tools, no generated Cypher.** Azure OpenAI is given eleven read-only tools (`backend/app/chat/tools.py`): policy search, policy section, policies for an asset, list policy documents, find assets, describe table, ontology terms (the business concepts, the tables representing them and the data flows between those tables), lineage, impact, PII columns and pipelines. Each is a reviewed query with bound parameters, run in a READ transaction, or a call into the same repository the lineage pages use.
+- **Trimmed results.** The model sees a few plain fields per row. Embeddings never leave the server, text is clipped, and a tool returns at most 60 rows.
+- **Graphs only when asked.** If the latest message directly asks for a graph, diagram or visual (words like *graph, diagram, visualise, draw, chart, picture*, or asking to *show / see / display* the lineage, impact, data flow, upstream, downstream or dependencies of something), a twelfth tool, `show_graph`, is offered. It fetches the graph from Neo4j with a fixed query (lineage, impact, policies linked to an asset, PII flow, pipelines, neighbours, or the ontology) and the Chat page draws it under the answer with the same graph component as the other pages, plus an **Open in Query** button that loads the Cypher behind it. Otherwise the tool does not exist for that turn, so a plain question never produces a graph; a follow-up is judged on its own wording. The model sees only the graph's size, and the browser gets at most 120 nodes with embeddings and long text removed. Plain scrolling over a graph scrolls the chat; hold Ctrl (or pinch) to zoom.
+- **Policy search is semantic.** The question is embedded locally and matched against the `policy_chunk_embedding` vector index. Answers cite the policy sections they relied on, and the UI lists the sections consulted. Open **How this was found** under an answer to see every tool call.
+- **Linked columns are a hint, not the truth.** `GOVERNS` links come from the earlier automated mapping and may be incomplete, and the assistant is told to say so. Nothing in the graph is changed by the chatbot.
+
+Setup:
+1. Put the four `AZURE_OPEN_AI_*` values in `.env` (see the table above; `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` and `AZURE_OPENAI_API_KEY` spellings also work), then restart the backend.
+2. Download the local embedding model once:
+
+   ```bash
+   backend\.venv\Scripts\python scripts\fetch_embedding_model.py
+   ```
+
+   It goes to `.model_cache/` (git-ignored). The script trusts the operating system's certificate store, so it works behind a proxy that re-signs TLS certificates without turning verification off. It must run as its own process: the API server never loads that trust store, because it does not coexist with `NEO4J_URI=neo4j+ssc://`. The model has to be `BAAI/bge-small-en-v1.5` (`EMBEDDING_MODEL`), because that is what produced the vectors stored in Neo4j.
+
+`GET /api/chat/status` (and a notice at the top of the chat) tells you what is missing. Lineage, impact, PII and pipeline questions work without the embedding model; policy questions need it **and** live mode (snapshot data has no policy text).
+
+Limits to know about:
+- The local model is the ONNX build of bge-small run through `fastembed`, while the vectors in Neo4j were made with `sentence-transformers`. They are close but not guaranteed identical, so check the scores on a few real questions.
+- Answers are generated by a language model: read the cited sections before acting on one. Azure's content filter can block a prompt; the page then asks the user to rephrase.
+- `/api/chat` has no authentication, like the other routes, and every question costs model tokens. Add real auth in `require_user` before exposing it beyond a trusted network.
+- Tool-call rounds are capped (`chat_max_tool_rounds`, default 6); after that the model must answer from what it has.
+
+## Policy mapping (LLM)
+
+Maps policy sections to the tables and columns they govern. It replaces the register-based mapping, which only worked for documents that carry a register table. The job lives in `backend/app/mapping/` and runs as a script here or from a Fabric notebook.
+
+How it works, per policy chunk:
+1. **Catalogue.** The models read a compact catalogue of the data estate from Neo4j: tables, columns, types, descriptions, PII flags, business terms, and where each column's data comes from. **Metadata only; no row data is ever sent to a model.**
+2. **Mapper (model 1)** proposes links. Each has an asset from the catalogue, a relation (defines, constrains, requires_control, retention, access, quality_rule), a **verbatim quote** from the policy and a confidence. A whole-group statement ("personal data must be kept accurate") becomes a category such as `@PII`, which the code expands to the flagged columns.
+3. **Checks in code.** An unknown asset, or a quote that does not appear in the chunk, is rejected and listed in the report.
+4. **Verifier** (model 2 if set, otherwise model 1 again) judges each surviving link without seeing the mapper's confidence; **tie-breaker** (model 3 if set, otherwise model 1) is asked only about links the verifier disputed.
+5. **Status.** Verified and high confidence: `accepted`. Medium confidence, contested, or a category link from a Purpose/Scope-type section: `proposed` (needs a person). Rejected by the models: dropped (report only). While the verifier is the same model as the mapper, nothing is auto-accepted either: every link is `proposed` (see below).
+
+**One model is enough.** `AZURE_OPEN_AI_MODEL_NAME` (the deployment the chatbot also uses) plays every role: mapper, verifier and tie-breaker, each as its own call with its own prompt. `AZURE_OPEN_AI_MODEL_NAME_2` (verifier) and `AZURE_OPEN_AI_MODEL_NAME_3` (tie-breaker) are optional: add them if model 1's token limit becomes a problem, and those calls move to the new deployments. An extra model reuses the first one's endpoint, key and version unless it sets `AZURE_OPEN_AI_ENDPOINT_2`, `AZURE_OPEN_AI_KEY_2`, `AZURE_OPEN_AI_VERSION_2` (and `_3`).
+
+A model agreeing with its own answer is not independent evidence. While model 1 also verifies, its verdicts can still drop links it finds unsupported, but a link is not auto-accepted on its approval alone: it stays `proposed` for a person. `--accept-self-verified` lets the high-confidence ones through if you decide to trust it; `check` and the report (`independent_verification`) say which situation you are in. One model doing every role means about three times the calls, so a rate-limited call (HTTP 429) waits and retries (the service's `Retry-After`, otherwise 5, 15, then 45 seconds) before a chunk is given up on. `--workers` lowers the parallel load, and `--only-unlinked` and the cache reduce the number of calls.
+
+```bash
+cd backend
+.venv\Scripts\python -m app.mapping check                  # models, catalogue size, chunks, existing links; no model calls
+.venv\Scripts\python -m app.mapping run --limit 10         # DRY RUN (default): calls the models, writes only reports/mapping-<run>.json
+.venv\Scripts\python -m app.mapping run --write            # append: add links that are missing, touch nothing else
+.venv\Scripts\python -m app.mapping run --mode overwrite --write --confirm-overwrite
+.venv\Scripts\python -m app.mapping review --run <run_id> --accept --min-confidence high
+.venv\Scripts\python -m app.mapping restore --run <run_id> # undo a run
+```
+
+**Append** (default) never modifies an existing link: it only creates (chunk, asset) pairs that have no live link yet. **Overwrite** replaces the live links of the chosen chunks by marking the old ones `superseded` (not deleting them) and creating the new ones; it needs `--confirm-overwrite`, leaves chunks whose model call failed untouched, and `restore` brings everything back. In both modes a pair a person has `rejected` is never created again. Useful filters: `--docs`, `--chunks`, `--limit`, `--only-unlinked`, `--no-auto-accept`. Results are cached in `.mapping_cache/` (keyed by chunk text, catalogue, prompt version and models), so a re-run only pays for what changed.
+
+Every link carries `status`, `source = llm_mapping`, `method`, `relation`, `confidence`, `evidence`, `reason`, `votes`, `run_id`, `prompt_version` and `models`, and a `MappingRun` node records each write. Statuses are `accepted`, `proposed`, `rejected`, `superseded` and `retracted`; the app, the chatbot and the lineage pages show only `accepted` links, and links made before this feature (which have no `status`) count as accepted. The Bloom explorer shows the raw graph, every status included.
+
+**Fabric.** `python scripts/build_fabric_bundle.py` writes `dist/lineage_mapping_bundle.zip` (about 30 KB; only the modules the job needs, no web framework). Upload it to the lakehouse under `Files/lineage_studio/`, import `fabric/nb_llm_policy_mapping.ipynb`, and set `KEY_VAULT` in its parameters cell. The notebook reads chunks from the `policy_chunks` table, the catalogue and existing links from Neo4j, runs the same code, optionally writes to Neo4j, and appends every link it considered to `Tables/policy_link_candidates`. A pipeline can run it and read the summary from the notebook's exit value.
+
+Limits to know about:
+- **Not yet run inside Fabric.** The notebook compiles and its setup works from the bundle alone, but whether your workspace can reach the Azure OpenAI endpoint is only known by running its smoke-test cell.
+- **Chunk ids must match.** The links attach to `PolicyChunk` nodes by `chunk_id`, so the Fabric table and Neo4j must use the same ids (they do when Neo4j was loaded from that table).
+- **A model grading itself is not a check.** Verification only helps when the verifier is a different deployment from the mapper.
+- **Quality is measured, not assumed.** Compare a dry run with your existing links and a hand-labelled sample before using `overwrite`.
+
+## Run jobs
+
+The **Run jobs** page draws the whole process as a flow of six numbered boxes (click one to jump to its buttons; stage 5 has none), in this order, and has two tabs.
+
+**Stages 1 to 3: Fabric pipelines and notebooks.** Buttons start Fabric items, singly or as a *chain* that runs one step after another and stops at the first one that fails:
+1. **Structured data harvesting**: the upstream copy pipelines (`PL_CP_*`, PostgreSQL to the lakehouse), plus a chain that runs all five. Each is behind a confirmation.
+2. **Lineage extraction**: the lineage extractor notebook, behind a confirmation.
+3. **Unstructured data chunking**: split the policy documents into sections (step 2), load them into the graph (step 3), make tables and columns searchable (step 4), plus "run all three" and "a policy changed". The old step 5 is retired (a no-op stub) and has no button.
+4. **Policy document mapping**: has its own tab (below), because the result is reviewed before it is saved. The Fabric tab shows a card with an **Open stage 4** button instead of a second set of buttons. (The `nb_llm_policy_mapping` notebook trigger and its chains still exist in `registry.py` and the API, but have no button.)
+- Set B (`01_` to `06_`, six notebooks that were designed but never imported) is hidden from the page. It is still in `registry.py` and the API; to show it again, remove `"setb"` from `HIDDEN` in `FabricPanel.tsx` once the notebooks are imported.
+
+Stage 5 (**Graph modelling**) is a display-only box: it has no button, tab or pipeline behind it. Stage 6 (**Consumption**) opens the chat.
+
+Each job is found in the workspace by display name. The list lives in `backend/app/jobs/registry.py`, with several names where a notebook was renamed. Jobs that are missing show as such and their button is off; a job that changes data, and any run with "Write to Neo4j" ticked, asks for confirmation. Runs show their steps, Fabric's failure message, and a Cancel button; they are kept in memory, so an API restart clears the list (Fabric keeps its own history).
+
+Set up in `.env`: a workspace (`FABRIC_WORKSPACE_ID`, or `FABRIC_WORKSPACE_NAME`, which defaults to `Ontology_Lineage`) and one way to sign in:
+- **a service principal**: `FABRIC_TENANT_ID`, `FABRIC_CLIENT_ID`, `FABRIC_CLIENT_SECRET`. Add it to the workspace as Contributor or higher, and ask your Fabric admin whether a tenant setting must allow service principals to use Fabric APIs;
+- **or a pasted token**: `FABRIC_ACCESS_TOKEN` (for example from `Get-AzAccessToken -ResourceUrl https://api.fabric.microsoft.com`). It expires, usually within the hour, and the page shows how long is left.
+
+The page tells you what is missing, and **Check the workspace** lists which jobs it can find. Fabric calls verify TLS against the operating system's certificates, so a proxy that re-signs certificates works.
+
+**Stage 4: Policy document mapping** (the LLM policy mapping; the tab opens with a plain-English "What this page does" box). **Check**, **Try it** (a dry run that writes nothing), then **Review and save** before anything is written: every proposed link, with the policy quote behind it, gets Accept / Reject / Skip (high-confidence links start as Accept, the rest as Skip, and any can be changed), and only your picks go into Neo4j. Accepted links start showing in the app and the chatbot; rejected ones are kept as a record and never proposed again; skipped ones are not written at all. You can also **Run and write to Neo4j** straight away, then accept, reject or **Undo this run** afterwards. These are the same functions as `python -m app.mapping`, described above. Writing needs `MAPPING_UI_WRITE=true` (the default) and a confirmation; overwrite mode asks for a second, explicit one.
+
+Limits to know about:
+- **Not yet run against a real Fabric workspace.** It follows the public Job Scheduler and Items API reference and was exercised against a stand-in server and unit tests. On the first real try, use **Check the workspace**, then run the LLM mapping notebook with writing off. If Fabric rejects the parameters (the reference notes parameters are "not broadly supported"), set `FABRIC_PARAM_STYLE=execution_data`.
+- **There is no login.** Anyone who can open the page can start these jobs. Put real authentication in `require_user` before exposing it beyond a trusted network.
+- **One run of a job at a time.** Starting a job that is already running is refused.
+- **Where the results are saved.** Links you write are saved in Neo4j. Every mapping run, a dry run included, also leaves its full report as a JSON file in `reports/` on the machine that runs the API; that is where the Review list of dry runs comes from. **Nothing from this page is written to Fabric.** The Fabric notebook `nb_llm_policy_mapping` is the only thing that appends the links it considered to a lakehouse table (`Tables/policy_link_candidates`).
 
 ## Troubleshooting
 

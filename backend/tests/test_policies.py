@@ -110,5 +110,7 @@ def test_lineage_can_start_from_a_policy_document(pclient) -> None:
 def test_policy_cypher_uses_doc_id() -> None:
     q = cypher.lineage("PolicyDocument", "both", 3)
     assert "(start:PolicyDocument {doc_id: $id})" in q
-    assert "[:HAS_CHUNK]->(:PolicyChunk)-[:GOVERNS]->" in q
+    assert f"[:HAS_CHUNK]->(:PolicyChunk)-{cypher.GOVERNS_ACTIVE}->" in q
     assert "WHERE x.id IN $ids" in cypher.GOVERNING_POLICIES
+    # Only accepted links (or links from before statuses existed) are ever read.
+    assert "coalesce(g.status, 'accepted') = 'accepted'" in cypher.GOVERNING_POLICIES

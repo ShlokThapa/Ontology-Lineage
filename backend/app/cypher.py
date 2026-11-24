@@ -8,11 +8,26 @@ bounds cannot be parameters.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 Direction = Literal["upstream", "downstream", "both"]
 
+
+def cypher_literal(value: str) -> str:
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def inline_params(query: str, params: dict[str, Any]) -> str:
+    """Inline string parameters so "Open in Query" works without :param."""
+    for key, value in params.items():
+        query = query.replace(f"${key}", cypher_literal(str(value)))
+    return query
+
 COLUMN_SEARCH_LABELS = ("Table", "View", "Column", "Pipeline", "BusinessConcept")
+
+# A GOVERNS link counts only while it is accepted. Links made before the LLM mapping existed carry no `status`,
+# and count as accepted; proposed / rejected / superseded / retracted links stay in the graph but are not shown.
+GOVERNS_ACTIVE = "[g:GOVERNS WHERE coalesce(g.status, 'accepted') = 'accepted']"
 
 SEARCH = """CALL {
   MATCH (n:Asset)
@@ -49,7 +64,7 @@ ORDER BY rank, size(key)
 LIMIT 1"""
 
 # Policy sections that govern any of the given tables / views / columns.
-GOVERNING_POLICIES = """MATCH p = (:PolicyDocument)-[:HAS_CHUNK]->(:PolicyChunk)-[:GOVERNS]->(x:Asset)
+GOVERNING_POLICIES = f"""MATCH p = (:PolicyDocument)-[:HAS_CHUNK]->(:PolicyChunk)-{GOVERNS_ACTIVE}->(x:Asset)
 WHERE x.id IN $ids
 RETURN p"""
 
@@ -75,7 +90,7 @@ def _seed_pattern(label: str) -> str | None:
     if label == "PolicyDocument":
         # Columns the policy governs directly, plus the columns of the tables it governs.
         return (
-            "(:PolicyDocument {doc_id: $id})-[:HAS_CHUNK]->(:PolicyChunk)-[:GOVERNS]->(:Asset)"
+            f"(:PolicyDocument {{doc_id: $id}})-[:HAS_CHUNK]->(:PolicyChunk)-{GOVERNS_ACTIVE}->(:Asset)"
             "-[:HAS_COLUMN*0..1]->(s:Column)"
         )
     return None
@@ -113,7 +128,7 @@ def lineage(label: str, direction: Direction, depth: int) -> str:
         )
     if label == "PolicyDocument":
         branches.append(
-            "MATCH p = (:PolicyDocument {doc_id: $id})-[:HAS_CHUNK]->(:PolicyChunk)-[:GOVERNS]->(:Asset)\n"
+            f"MATCH p = (:PolicyDocument {{doc_id: $id}})-[:HAS_CHUNK]->(:PolicyChunk)-{GOVERNS_ACTIVE}->(:Asset)\n"
             "RETURN null AS s, p, [x IN nodes(p) | [h = (:Asset)-[:HAS_COLUMN]->(x) | h]] AS owners"
         )
     if label == "Pipeline":
@@ -140,6 +155,15 @@ OPTIONAL MATCH f = (src)-[:FLOWS_TO]->(tgt:Column)
 OPTIONAL MATCH tc = (tgt)-[:CLASSIFIED_AS]->(:Classification)
 RETURN src, c, f, tc,
        [x IN [src, tgt] WHERE x IS NOT NULL | [h = (:Asset)-[:HAS_COLUMN]->(x) | h]] AS owners"""
+
+# Everything the policy-mapping job shows the LLM about the data estate: tables / views, their columns, the
+# business terms they represent, column classifications, and the flows into each column (with expressions).
+CATALOGUE = """MATCH (t:Asset) WHERE t:Table OR t:View
+OPTIONAL MATCH hc = (t)-[:HAS_COLUMN]->(c:Column)
+OPTIONAL MATCH rp = (t)-[:REPRESENTS]->(:BusinessConcept)
+OPTIONAL MATCH cl = (c)-[:CLASSIFIED_AS]->(:Classification)
+OPTIONAL MATCH fl = (:Column)-[:FLOWS_TO]->(c)
+RETURN t, hc, rp, cl, fl"""
 
 PIPELINES = """MATCH p = (:Pipeline)-[:CONTAINS]->(a:Activity)
 OPTIONAL MATCH r = (a)-[:READS_FROM|WRITES_TO|PRECEDES|INVOKES]->(:Asset)

@@ -130,13 +130,18 @@ class SnapshotRepository:
             return seeds
         return set()
 
+    @staticmethod
+    def _active(g: GEdge) -> bool:
+        """Same rule as cypher.GOVERNS_ACTIVE: a link without a status counts as accepted."""
+        return (g.props.get("status") or "accepted") == "accepted"
+
     def _governed(self, doc_id: str) -> list[GEdge]:
-        return [g for c in self._out(doc_id, "HAS_CHUNK") for g in self._out(c.target, "GOVERNS")]
+        return [g for c in self._out(doc_id, "HAS_CHUNK") for g in self._out(c.target, "GOVERNS") if self._active(g)]
 
     def governing_policies(self, ids: list[str]) -> SubGraph:
         sub = SubGraph()
         for asset in ids:
-            for g in self._in(asset, "GOVERNS"):
+            for g in (g for g in self._in(asset, "GOVERNS") if self._active(g)):
                 for h in self._in(g.source, "HAS_CHUNK"):
                     self._add_edge(sub, h)
                     self._add_edge(sub, g)
@@ -169,7 +174,7 @@ class SnapshotRepository:
                 self._add_edge(sub, e)
         if start.label == "PolicyDocument":
             for c in self._out(start.id, "HAS_CHUNK"):
-                for g in self._out(c.target, "GOVERNS"):
+                for g in (g for g in self._out(c.target, "GOVERNS") if self._active(g)):
                     self._add_edge(sub, c)
                     self._add_edge(sub, g)
                     if self.nodes[g.target].label == "Column":
@@ -202,6 +207,24 @@ class SnapshotRepository:
                 self._add_edge(sub, f)
                 self._add_owner(sub, f.target)
                 for e in self._out(f.target, "CLASSIFIED_AS"):
+                    self._add_edge(sub, e)
+        return sub
+
+    def catalogue(self) -> SubGraph:
+        """Tables / views with their columns, business terms, classifications and incoming flows
+        (the same shape cypher.CATALOGUE returns)."""
+        sub = SubGraph()
+        for t in self.nodes.values():
+            if t.label not in ("Table", "View"):
+                continue
+            sub.add_node(t)
+            for e in self._out(t.id, "REPRESENTS"):
+                self._add_edge(sub, e)
+            for h in self._out(t.id, "HAS_COLUMN"):
+                self._add_edge(sub, h)
+                for e in self._out(h.target, "CLASSIFIED_AS"):
+                    self._add_edge(sub, e)
+                for e in self._in(h.target, "FLOWS_TO"):
                     self._add_edge(sub, e)
         return sub
 

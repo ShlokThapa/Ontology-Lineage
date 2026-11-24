@@ -183,6 +183,52 @@ export interface PipelineSummary {
 
 // ---- status / schema ----------------------------------------------------------
 
+/** One turn of the conversation sent to the chatbot. */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatCitation {
+  chunk_id: string;
+  doc_id: string | null;
+  doc_title: string | null;
+  section_path: string | null;
+  heading: string | null;
+}
+
+/** A tool the chatbot ran to find its answer. */
+export interface ChatStep {
+  tool: string;
+  arguments: Record<string, unknown>;
+  summary: string;
+  error: boolean;
+}
+
+/** A graph fetched from Neo4j for the chat to draw. Present only when the user asked for one. */
+export interface ChatGraph extends GraphData {
+  kind: "lineage" | "impact" | "policies" | "pii" | "pipelines" | "neighbors" | "ontology";
+  title: string;
+  cypher: string | null;
+  truncated: boolean;
+}
+
+export interface ChatResponse {
+  answer: string;
+  graph: ChatGraph | null;
+  citations: ChatCitation[];
+  steps: ChatStep[];
+  tokens: number;
+  model: string;
+}
+
+export interface ChatStatus {
+  configured: boolean;
+  model: string | null;
+  policy_search: boolean;
+  mode: "live" | "snapshot";
+}
+
 export interface Health {
   mode: "live" | "snapshot";
   connected: boolean;
@@ -209,4 +255,185 @@ export interface SchemaInfo {
 
 export interface ApiErrorBody {
   error: { code: string; message: string };
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Jobs page: Fabric triggers and the policy-mapping job
+// ---------------------------------------------------------------------------------------------------------
+
+export interface JobParam {
+  name: string;
+  label: string;
+  type: "text" | "bool" | "int" | "select";
+  default: string | number | boolean | null;
+  options: string[];
+}
+
+export interface JobInfo {
+  key: string;
+  title: string;
+  description: string;
+  item_type: "Notebook" | "DataPipeline";
+  group: string;
+  confirm: string;
+  legacy: boolean;
+  names: string[];
+  params: JobParam[];
+}
+
+export interface ChainInfo {
+  key: string;
+  title: string;
+  description: string;
+  group: string;
+  steps: string[];
+}
+
+export interface JobsConfig {
+  groups: Record<string, string>;
+  /** One plain sentence per group, for a reader who is not technical. */
+  group_notes: Record<string, string>;
+  jobs: JobInfo[];
+  chains: ChainInfo[];
+  fabric: { configured: boolean; auth_mode: "service_principal" | "token" | "none"; workspace: string | null; param_style: string };
+  mapping: { write_enabled: boolean; live: boolean };
+}
+
+export interface FabricItemState {
+  found: boolean;
+  item_id: string | null;
+  display_name: string | null;
+  looked_for: string[];
+}
+
+export interface FabricStatus {
+  configured: boolean;
+  auth_mode: "service_principal" | "token" | "none";
+  token_expires_in: number | null;
+  workspace: string | null;
+  items: Record<string, FabricItemState>;
+  error: string | null;
+  problems: string[];
+}
+
+export interface JobStep {
+  key: string;
+  title: string;
+  status: string;
+  message: string;
+  item_id: string | null;
+  instance_id: string | null;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
+export interface MappingResult {
+  run_id: string;
+  summary: Record<string, unknown>;
+  report_path: string;
+  written: { created: number; superseded: number } | null;
+  failed_chunks: string[];
+  dry_run: boolean;
+}
+
+export interface JobRun {
+  id: string;
+  kind: "fabric" | "chain" | "mapping";
+  key: string;
+  title: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  started_at: number;
+  finished_at: number | null;
+  error: string | null;
+  progress: { done: number; total: number } | null;
+  result: MappingResult | null;
+  log: string[];
+  cancel_requested: boolean;
+  steps: JobStep[];
+}
+
+export interface MappingCheck {
+  catalogue: { tables: number; columns: number; categories: string[]; hash: string };
+  chunks: { total: number; documents: number; with_live_link: number; without_link: number };
+  existing_links: number;
+  models: { slot: number; role: string; model: string | null }[];
+  independent_verifier: boolean;
+}
+
+export interface MappingRunOptions {
+  mode: "append" | "overwrite";
+  write: boolean;
+  confirm_overwrite: boolean;
+  only_unlinked: boolean;
+  no_auto_accept: boolean;
+  accept_self_verified: boolean;
+  docs: string[];
+  limit: number | null;
+  workers: number;
+  use_cache: boolean;
+}
+
+export interface MappingLink {
+  chunk_id: string;
+  section: string;
+  asset_id: string;
+  asset: string;
+  status: string;
+  confidence: string;
+  relation: string;
+  evidence: string;
+  reason: string;
+  category: string;
+  note: string;
+}
+
+export interface MappingPastRun {
+  run_id: string;
+  mode: string;
+  started_at: string;
+  created: number;
+  superseded: number;
+  models: Record<string, string | null>;
+  links_by_status: Record<string, number>;
+}
+
+/** A saved run report: a dry run lives here until someone writes some of it. */
+export interface MappingReportInfo {
+  run_id: string;
+  created: number;
+  mode: string | null;
+  chunks: number;
+  links: number;
+  written: boolean;
+}
+
+export interface MappingReportLink {
+  chunk_id: string;
+  doc_title: string;
+  section_path: string;
+  asset: string;
+  asset_id: string;
+  relation: string;
+  confidence: string;
+  status: string;
+  basis: string;
+  category: string | null;
+  evidence: string;
+  reason: string;
+  note: string;
+}
+
+export interface MappingReport {
+  run_id: string;
+  written: boolean;
+  summary: { mode?: string; chunks_processed?: number; to_create?: number; independent_verification?: boolean };
+  links: MappingReportLink[];
+}
+
+export interface ApplyResult {
+  run_id: string;
+  created: number;
+  accepted: number;
+  rejected: number;
+  skipped: { chunk_id: string; ref: string; reason: string }[];
 }
